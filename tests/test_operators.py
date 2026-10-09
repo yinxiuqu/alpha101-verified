@@ -252,6 +252,30 @@ def test_a18_decay_linear_matches_np_average():
             assert np.isclose(out.iloc[t, c], np.average(window, weights=weights), rtol=1e-12)
 
 
+def test_a18b_decay_linear_order_option_aligns_with_vnpy_convention():
+    """★ 歧义点 order：论文权重列表 `d, d–1, …, 1` 的**枚举方向**未写死。
+
+    本库默认 ``recent_first``（最新权重最大）；``oldest_first`` 复现「按时间正序读」的另一种口径
+    ——实测这正是 vnpy ``ts_decay_linear`` 的实现方式（见 `tools/differential.py` 的 D1）。
+    两者互为镜像：``oldest_first(x, d) == recent_first(reverse(x), d)`` 再反向。
+    """
+    x = seq([1, 2, 3, 4, 5, 6])
+    oldest = values(ops.decay_linear(x, 3, order="oldest_first"))
+    recent = values(ops.decay_linear(x, 3))
+    # 闭式（窗口 [1,2,3]）：oldest = (3·1 + 2·2 + 1·3)/6 = 10/6；recent = (1·1 + 2·2 + 3·3)/6 = 14/6
+    assert_allclose(oldest[2], 10.0 / 6.0)
+    assert_allclose(recent[2], 14.0 / 6.0)
+    # 逐窗口与 np.average 对拍（两种权重方向各一份独立算式）
+    arr = x.to_numpy(dtype=float).ravel()
+    for t_ in range(2, len(arr)):
+        window = arr[t_ - 2 : t_ + 1]
+        assert np.isclose(oldest[t_], np.average(window, weights=[3.0, 2.0, 1.0]), rtol=1e-12)
+        assert np.isclose(recent[t_], np.average(window, weights=[1.0, 2.0, 3.0]), rtol=1e-12)
+    assert not np.allclose(oldest[2:], recent[2:], rtol=1e-6)   # 两种口径确实不同（非平移/缩放）
+    with pytest.raises(ValueError, match="order"):
+        ops.decay_linear(x, 3, order="mid")
+
+
 def test_a19_correlation_perfect_linear():
     """``correlation([1..5],[2,4,6,8,10],3)`` → ``[NaN, NaN, 1, 1, 1]``。"""
     x = seq([1, 2, 3, 4, 5])
@@ -358,15 +382,56 @@ def test_a26_nan_inside_window_propagates():
 
 
 def test_a27_window_and_period_validation():
-    """窗口/周期参数显式校验（负数、0 窗口、非整数一律报错）。"""
-    with pytest.raises(ValueError):
-        ops.ts_sum(X5, 0)
-    with pytest.raises(TypeError):
-        ops.ts_sum(X5, 2.5)
+    """窗口/周期参数显式校验（0/负数/NaN/非数值报错；实数天数按论文 floor 后校验）。"""
+    for bad in (0, 0.5, 0.99):  # floor 后为 0 → 报错，不静默夹逼
+        with pytest.raises(ValueError):
+            ops.ts_sum(X5, bad)
     with pytest.raises(ValueError):
         ops.delta(X5, -1)
     with pytest.raises(ValueError):
         ops.decay_linear(X5, 0)
+    with pytest.raises(ValueError):
+        ops.ts_sum(X5, np.nan)
+    with pytest.raises(ValueError):
+        ops.ts_sum(X5, np.inf)
+    for bad in (True, "3", None):
+        with pytest.raises(TypeError):
+            ops.ts_sum(X5, bad)
+
+
+def test_a27b_paper_floor_rule_for_fractional_windows():
+    """★ 论文规则（L-A）：非整数天数取 **floor(d)**，不是四舍五入。
+
+    依据：论文 Appendix A「Functions and Operators」逐字
+    *"non-integer number of days d is converted to floor(d)"*；
+    论文自身在 58–99 号因子中大量使用非整数窗口（共 229 处，最多 8 位小数），
+    如 Alpha#97 的 `delta(IndNeutralize(...), 3.3705)`、Alpha#96 的 `Ts_Rank(close, 7.45404)`。
+    见 `docs/paper_formulas.md` §7.1、`docs/operators.md` §3.8。
+    """
+    unary = [
+        (ops.ts_sum, 2.5, 2), (ops.sma, 2.9, 2), (ops.stddev, 3.2, 3),
+        (ops.ts_rank, 7.45404, 7),          # 论文 Alpha#96 的真实窗口
+        (ops.product, 2.75, 2), (ops.ts_min, 4.99, 4), (ops.ts_max, 4.01, 4),
+        (ops.decay_linear, 3.9, 3), (ops.ts_argmax, 5.5, 5), (ops.ts_argmin, 5.5, 5),
+    ]
+    for fn, given, floored in unary:
+        pd.testing.assert_frame_equal(fn(X5, given), fn(X5, floored))
+
+    assert_allclose(values(ops.delta(X5, 2.9)), values(ops.delta(X5, 2)))
+    assert_allclose(values(ops.delay(X5, 1.9)), values(ops.delay(X5, 1)))
+    assert_allclose(
+        values(ops.correlation(X5, X5 + 1.0, 3.65459)), values(ops.correlation(X5, X5 + 1.0, 3))
+    )
+    assert_allclose(
+        values(ops.covariance(X5, X5 + 1.0, 3.65459)), values(ops.covariance(X5, X5 + 1.0, 3))
+    )
+
+    # floor 而非 round：3.65 取 3（round 会得 4），两者结果必须不同
+    assert np.isclose(values(ops.ts_sum(X5, 3.65))[-1], values(ops.ts_sum(X5, 3))[-1])
+    assert not np.isclose(values(ops.ts_sum(X5, 3.65))[-1], values(ops.ts_sum(X5, 4))[-1])
+
+    # numpy 实数类型同样接受
+    pd.testing.assert_frame_equal(ops.ts_sum(X5, np.float64(3.2)), ops.ts_sum(X5, 3))
 
 
 def test_a28_binary_operators_require_aligned_panels():

@@ -39,12 +39,15 @@ def _panel() -> dict[str, pd.DataFrame]:
     return {"close": close, "volume": volume}
 
 
-def test_registry_is_empty_in_m1(clean_registry):
-    """M1 交付物里没有任何因子（诚实标注，见 README「当前状态」）。"""
-    assert registry.REGISTRY == {}
+def test_registry_holds_exactly_the_four_pilots():
+    """M2 试点：导入即注册 4 个因子，且**全部 partial、绝无 verified**（诚实标注，§6.8）。"""
+    import alpha101v.factors  # noqa: F401  （导入即注册）
+
+    assert set(registry.REGISTRY) == {"alpha101", "alpha4", "alpha41", "alpha56"}
     report = registry.status_report()
-    assert report.empty
     assert list(report.columns) == ["factor", "status", "fields", "paper_ref", "notes"]
+    assert set(report["status"]) == {"partial"}
+    assert (report["paper_ref"].str.contains("Appendix A")).all()
 
 
 def test_register_and_auto_wire_by_parameter_name(clean_registry):

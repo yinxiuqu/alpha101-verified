@@ -6,10 +6,12 @@
 
 | 项 | 状态（2026-10-09） |
 |---|---|
-| 里程碑 | **M0 完成**（骨架/许可/面板契约/CI）、**M1 完成**（20 个算子 + §8 全部用例 + 变异测试） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；219 个测试全绿；7/7 变异注入被抓住 |
-| 因子层（L2–L5） | ⛔ **尚未开始（0/101）**——按设计文档 §10.4「M1 未 100% 通过前不得进入 M2」 |
-| `verified` 因子数 | **0/101**（诚实计数：没有因子，就没有 verified） |
+| 里程碑 | **M0 完成**（骨架/许可/面板契约/CI）、**M1 完成**（20 个算子 + §8 全部用例 + 变异测试）、**M2 进行中**（论文规范入库 + `floor(d)` + `elemwise` + 4 个试点因子 + 算子层差分） |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**277** 个测试全绿；7/7 变异注入被抓住 |
+| 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
+| 因子层（M2 试点） | 🟡 **4/101**：`alpha101`/`alpha4`/`alpha41`/`alpha56` 已实现并验证，状态一律 **`partial`** |
+| 因子层（L2–L5） | 🟡 **M2 进行中**：4 个试点因子已交付；L2 自动对照（M3）、因子级差分（M4）、golden 快照（M5）**未完成** |
+| `verified` 因子数 | **0/101**（4 个试点全为 `partial`：六条门槛里 L2/L3-因子级/L5 未满足——诚实计数） |
 | 许可 | **MIT**（clean-room，零 GPL 血缘；CI 有机械守卫） |
 
 ---
@@ -64,7 +66,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 |---|---|---|
 | **L1 算子层** | 20 个算子的数学定义与权威实现对拍（pandas/scipy/statsmodels） | ✅ **已做**，20/20；见 `docs/operators.md` |
 | **L2 规范对照** | 论文附录公式 vs 实现 AST 逐节点比对 → 等价/近似/偏离 | ⛔ M3 |
-| **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | ⛔ M4（对拍范围仅 82/101） |
+| **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | 🟡 **算子层已做**（24 项，见 `docs/verification.md` §1.2）；**因子层 M4**（对拍范围仅 82/101） |
 | **L4 不变量与元测试** | 输入不可变性 / 时间截断一致性 / 未来扰动 / 缩放不变性 / **变异测试** | 🟡 **算子层已做**（`tests/test_invariants.py`、`tests/test_mutation.py`），因子层待 M2 |
 | **L5 golden 快照** | 固定种子面板上冻结 101 个因子输出，防回归 | ⛔ M5 |
 | **L6 统计合理性** | IC 符号/衰减形状/暴露检查 | ⛔ 需因子与 A 股数据；**明文禁止用「IC 好看」证明代码正确** |
@@ -88,6 +90,8 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 入参一字未改（专治 §3.3 缺陷 2） | `tests/test_invariants.py::test_inputs_are_not_modified`（22 个调用点） |
 | 无前视（PIT 金标准） | `test_time_truncation_consistency`（19 个算子）+ `test_future_perturbation_does_not_change_past` |
 | 未用将被删除的 pandas API（原实现死于 `as_matrix`） | `test_no_deprecated_pandas_api_warnings`（22 个调用点在 `FutureWarning`/`DeprecationWarning` 转异常下运行，0 警告） |
+| 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：24 项中 18 项对齐后逐点一致（含 argmax 基准、ts_rank 口径、decay 方向对齐后） |
+| 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
 | 测试套件不是摆设 | `tests/test_mutation.py`（7/7 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |
 | 零 GPL 血缘、运行时依赖只有 numpy/pandas/scipy | `tests/test_provenance.py`（源码 token 扫描 + 子进程 import 检查 + pyproject 解析） |
 | 面板契约（单位/前复权/pit 前提） | `tests/test_panel.py` + `src/alpha101v/panel.py` |
@@ -123,7 +127,10 @@ alpha101-verified/
 │   ├── test_provenance.py      # 许可/依赖机械守卫（5 个）
 │   ├── test_mutation.py        # 变异测试（8 个：7 注入 + 1 勘误钉死）
 │   └── golden/                 # golden 快照（M5 建；现为空并有说明）
-├── tools/                      # conformance_report.py / differential.py（M3/M4 建）
+├── tools/
+│   ├── differential.py         # ★ 算子层差分对拍（本库 vs vnpy MIT），退出码即证据
+│   ├── fetch_vnpy_reference.sh # 下载参照源码到 gitignored 的 .vnpy-ref/（含 SHA256 校验）
+│   └── README.md               # conformance_report.py 待 M3
 └── .github/workflows/ci.yml    # pandas 2.1/2.2/2.3 矩阵 + 算子闸门 + 变异步骤
 ```
 
@@ -142,7 +149,7 @@ alpha101-verified/
 |---|---|---|
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
-| M2 | 3~5 个试点因子（`alpha101` 可手算、`alpha4`、`alpha5`、`alpha41`、`alpha56`）+ L2/L3/L4 首跑 | ⛔ **前置：①非整数窗口 `floor(d)` 改码（40 因子吃紧）②`elemwise` 层（15 因子需要）——见 `docs/deviations.md` §1.2** |
+| M2 | 3~5 个试点因子 + L2/L3/L4 首跑 | 🟡 **进行中**：`floor(d)` ✅、`elemwise` 层 ✅、4 个试点因子 ✅（`alpha101`/`alpha4`/`alpha41`/`alpha56`）、算子层 L3 ✅；余下 `alpha5`（`abs` 已就绪）与因子级差分 |
 | M3 | 101 个因子 + 规范对照 + 偏差清单 | ⛔ |
 | M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |
 | M5 | golden 快照 + 文档 + 发布 | ⛔ |

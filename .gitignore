@@ -12,3 +12,6 @@ htmlcov/
 venv/
 .ipynb_checkpoints/
 .DS_Store
+
+# vnpy 差分参照（MIT，仅测试期；由 tools/fetch_vnpy_reference.sh 下载，不入库）
+.vnpy-ref/

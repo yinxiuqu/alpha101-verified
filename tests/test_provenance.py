@@ -55,16 +55,27 @@ def test_source_tree_has_no_gpl_lineage_tokens():
     assert not offenders, "src/ 出现 GPL 实现的血缘痕迹：" + "; ".join(offenders)
 
 
+#: 这些目录不属于「仓库内容」：本地虚拟环境与构建产物里会带第三方许可文件
+#: （实测：`.venv/**/pip/_vendor/msgpack/COPYING`），不该被本守卫误报。
+_SKIP_DIR_PARTS = {"build", "dist", "site-packages", "node_modules", "__pycache__"}
+
+
+def _is_repo_content(path: pathlib.Path) -> bool:
+    parts = path.relative_to(ROOT).parts[:-1]  # 去掉文件名本身
+    return not any(part.startswith(".") or part in _SKIP_DIR_PARTS for part in parts)
+
+
 def test_license_is_mit_and_no_gpl_license_files():
     text = (ROOT / "LICENSE").read_text(encoding="utf-8")
     assert text.startswith("MIT License")
     assert "Permission is hereby granted, free of charge" in text
     suspicious = [
-        p.name
+        str(p.relative_to(ROOT))
         for p in ROOT.rglob("*")
-        if p.is_file() and p.name.upper() in {"COPYING", "COPYING.TXT", "LICENSE.GPL", "GPL-3.0"}
+        if p.is_file() and _is_repo_content(p)
+        and p.name.upper() in {"COPYING", "COPYING.TXT", "LICENSE.GPL", "GPL-3.0"}
     ]
-    assert not suspicious
+    assert not suspicious, f"仓库内出现 GPL 许可文件：{suspicious}"
 
 
 def test_runtime_import_is_minimal():

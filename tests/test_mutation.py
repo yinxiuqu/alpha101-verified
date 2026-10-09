@@ -94,8 +94,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         id="m5_stddev_ddof_zero",
         source=OPERATORS,
-        anchor="def stddev(df: pd.DataFrame, window: int, ddof: int = 1) -> pd.DataFrame:",
-        replacement="def stddev(df: pd.DataFrame, window: int, ddof: int = 0) -> pd.DataFrame:",
+        anchor="def stddev(df: pd.DataFrame, window: int | float, ddof: int = 1) -> pd.DataFrame:",
+        replacement="def stddev(df: pd.DataFrame, window: int | float, ddof: int = 0) -> pd.DataFrame:",
         targets=(TEST_OPERATORS,),
         catcher="test_a03_stddev_default_is_ddof1",
         rationale="§8.4 行 5：stddev 默认 ddof 由 1 改成 0（样本→总体口径漂移）",

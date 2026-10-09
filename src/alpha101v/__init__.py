@@ -4,13 +4,21 @@
 口径唯一权威：``docs/operators.md``。
 
 公开算子面恰好 20 个（16 个时序/截面算子 + ``rolling_rank`` 构件 + 3 个中性化算子），
-见 :data:`OPERATORS`。因子层（``factors.py`` / ``registry.REGISTRY``）是 M2/M3 的工作，
-本包当前**不含任何因子实现**，也不含任何来自 GPL 实现的代码（clean-room）。
+见 :data:`OPERATORS`；另有**不属于算子面**的逐元素函数层见 :data:`ELEMWISE`
+（论文把它们列为 Functions，见 ``docs/operators.md`` §3.9）。
+
+因子层（M2）当前交付 **4 个试点因子**：:data:`PILOT_FACTORS`
+（``alpha101`` / ``alpha4`` / ``alpha41`` / ``alpha56``），导入本包即自动登记进
+``registry.REGISTRY``，状态一律 ``partial``（``verified`` 需六条门槛，见设计文档 §6.8）。因子层（``factors.py``）当前只含 M2 的 4 个试点因子；全量 101 个是 M3 的工作。
+本包**不含任何来自 GPL 实现的代码**（clean-room，见 ``docs/paper_formulas.md`` 与
+``tests/test_provenance.py``）。
 """
 
 from __future__ import annotations
 
-from . import neutralize, operators
+from . import elemwise, factors, neutralize, operators, panel, registry
+from .elemwise import ELEMWISE, abs_, log, sign, signedpower
+from .factors import PILOT_FACTORS, alpha4, alpha41, alpha56, alpha101
 from .neutralize import ind_neutralize, neu_industry, neutral
 from .operators import (
     correlation,
@@ -63,8 +71,22 @@ OPERATORS: tuple[str, ...] = (
 )
 
 __all__ = [
+    "ELEMWISE",
     "OPERATORS",
+    "PILOT_FACTORS",
     "__version__",
+    "alpha4",
+    "alpha41",
+    "alpha56",
+    "alpha101",
+    "factors",
+    "panel",
+    "registry",
+    "abs_",
+    "elemwise",
+    "log",
+    "sign",
+    "signedpower",
     "correlation",
     "covariance",
     "decay_linear",

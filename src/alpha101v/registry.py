@@ -9,7 +9,9 @@
 面板（原始实现 ``alpha1`` 的真实事故，设计文档 §3.3 缺陷 2）。
 :func:`run_factor` 默认 ``copy_inputs=True`` 落实该前提。
 
-**当前注册表为空**：因子层是 M2/M3 的工作，本轮（M0/M1）只交付算子层与这套装配机制。
+**当前注册表内容**：M2 的 4 个试点因子（``alpha101`` / ``alpha4`` / ``alpha41`` / ``alpha56``），
+由 ``alpha101v.factors`` 在导入时自动登记，状态一律 ``partial``（``verified`` 需六条门槛，见设计文档 §6.8）。
+全量 101 个是 M3 的工作。
 """
 
 from __future__ import annotations

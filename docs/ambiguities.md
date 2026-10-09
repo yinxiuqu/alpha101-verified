@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | **v0.2**（2026-10-09；v0.2 加入论文原文核对结论，见 `docs/paper_formulas.md`） |
+| 文档版本 | **v0.3**（2026-10-09；v0.3 加入 vnpy 差分实测结论，见 `docs/operators.md` §6） |
 | 依据 | 设计文档 §6.1「可判定性」、§6.2、§6.8、§9 R2 |
 | 覆盖范围 | **算子层（L1）已完成全部决策**；因子层（L2/L3）待 M3 逐条记录 |
 
@@ -29,21 +29,24 @@
 
 | # | 歧义 | 社区分歧 | 本库决策 | 规范等级依据 | 锁定测试 |
 |---|---|---|---|---|---|
-| A1 | `stddev`/`covariance` 的 `ddof` | pandas 默认 1，numpy 默认 0 | **默认 1**（样本），只放行 0/1 | L-C（数学定义）+ 与 pandas 对拍 | `test_a03/a04/a05/a22/a23` |
+| A1 | `stddev`/`covariance` 的 `ddof` | pandas 默认 1，numpy/vnpy `ts_std` 用 0 | **默认 1**（样本），只放行 0/1；`ddof=0` 对齐 vnpy（实测逐点一致） | L-C + pandas 对拍 + L-D（vnpy `ts_std` 用 0，但其 `cs_std` 用 1，**自身不一致**） | `test_a03/a04/a05/a22/a23` |
 | A2 | `ts_rank` 是否归一化 | 序号 1..n vs 名次/n vs (名次-1)/(n-1) | **默认 `pct=True`（名次/window ∈ (0,1]）**，可切序号 | L-C + 与 `scipy.stats.rankdata` 对拍 | `test_a10/a11` |
 | A3 | `rank` 是否 pct | ordinal vs pct | **默认 `pct=True`（名次/n ∈ (0,1]）** | L-C（§8.2 的判据文字） | `test_b01/b03` |
-| A4 | `ts_argmax`/`ts_argmin` 基准与方向 | 自窗口起点 1-based vs BRAIN「距今 0-based」 | **默认自窗口起点 1-based**（`basis` 可切）——⚠️ **论文亦未定义**，仍属未定案 | L-A 歧义（论文只写 "which day … occurred on"）+ L-D | `test_a12`–`test_a16` |
-| A5 | `scale` 轴向 | 逐日截面求和 vs 按列求和 | **`axis=1`（每日 Σ\|x\|=k）**；⚠️ 论文**未写轴向**（只写 `sum(abs(x))=a`） | L-A 歧义 + L-C 推断（同系统内 `rank` 明写 cross-sectional） | `test_b05`–`test_b07` |
+| A4 | `ts_argmax`/`ts_argmin` 基准与方向 | 自窗口起点 1-based vs BRAIN「距今 0-based」 | **默认自窗口起点 1-based**（`basis` 可切）——论文未定义，但 **vnpy 实测同为 `arg_max()+1`**，默认获第二实现支持；BRAIN 文案仍待复核 | L-A 歧义 + **L-D 实测一致** | `test_a12`–`test_a16` + 差分 |
+| A5 | `scale` 轴向 | 逐日截面求和 vs 按列求和 | **`axis=1`（每日 Σ\|x\|=k）**；⚠️ 论文未写轴向，但 **vnpy `cs_scale` 实测同为每日截面** | L-A 歧义 + L-C 推断 + **L-D 实测一致** | `test_b05`–`test_b07` + 差分 |
 | A6 | 相关系数遇零方差序列 | NaN vs 0 vs inf | **NaN**（0/0 未定义，不伪装成观测） | L-C（数学定义） | `test_a20` |
 | A7 | `rank` 并列策略 | average / min / max / dense / first | **`average`**（生态默认），可显式切换 | L-C（scipy/pandas 默认） | `test_b02/a24` |
 | A8 | 滚动预热期填充 | `min_periods=1` 填值 vs 严格 NaN | **严格：`min_periods=window`** | L-C（口径自定，关键是显式） | `test_a25/a26` |
 | A9 | 平移不变性的适用范围 | 「多数因子排序应不变」被误读成算子不变 | 算子层**不承诺**；仅 `rank` 单调平移下不变 | 设计文档 §6.5 的适用范围澄清 | `test_translation_is_not_guaranteed_...` |
 | A10 | `neutral` 是否有隐式截距 | 有的实现自动加常数项 | **不含隐式截距**（与论文 `X(XᵀX)⁻¹Xᵀ` 一致），需要就显式加全 1 面板 | L-A（论文公式） | `test_c10/c13` |
-| A11 | `decay_linear` 权重**列举顺序** | 「d, d–1, …, 1」按时间正序 vs 由近及远 | **末值权重最大**（权重 `1..d` 归一）；两条理由见 `operators.md` §3.7 | L-A 歧义（论文未写枚举方向）+ 命名语义推断 | `test_a17/a18`；变异 `m3` |
+| A11 | `decay_linear` 权重**列举顺序** | 「d, d–1, …, 1」按时间正序 vs 由近及远 | **末值权重最大**（默认），另提供 `order="oldest_first"`；⚠️ **vnpy 实测取相反方向**（最老权重最大）⇒ 本项目**最高风险口径**，涉及 **22 个因子**，未定案前不得 `verified` | L-A 歧义 + L-D 实测相反 + 命名/WMA 惯例 | `test_a17/a18/a18b`；变异 `m3`；差分 D1 |
 | A12 | 非整数窗口 `d` | 报错 vs `floor` vs 四舍五入 | **论文明确 `floor(d)`**（无歧义）→ 本库当前报错，**属已判定的偏离，待改码** | **L-A 明确** | `test_a27`（待改） |
 | A13 | `signedpower(x, a)` | `x^a` vs 保号幂 `sign(x)·\|x\|^a` | 待定（Alpha#1/#84 中 a=2 无差异） | L-A 字面 `x^a` vs L-D 实现惯例 | 待 M3 |
 | A14 | `adv{d}` 的 A 股映射 | `amount`（美元/元成交额）vs `volume`（股/手） | **取 `amount`**（论文逐字为 "average daily **dollar volume**"） | **L-A 明确** | 待 M3 因子层 |
-| A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log` 的负值/零行为需显式 | L-A（论文列为函数而非算子） | 待 M2 |
+| A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log(0/负)` → NaN（不产生 -inf） | L-A（论文列为函数而非算子） | ✅ M2 已交付：`tests/test_elemwise.py` |
+| A16 | `scale` 零和行的取值 | `0` vs `NaN` | **NaN**（0/0 未定义；拒绝把「无数据」伪装成 0）；⚠️ **vnpy 实测给 0** | L-C + 设计文档 §3.3 缺陷 7 的同类原则 | `test_b07`；差分 D5 |
+| A17 | `signedpower` 的指数可否是面板 | 常数 vs 表达式 | **两者都支持**：标量或同形面板（论文 Alpha#84 的指数是 `delta(close, …)`） | L-A（论文原文即是面板） | `test_signedpower_accepts_a_panel_exponent...` |
+| A18 | 预热期是否填值 | 严格 NaN vs `min_samples=1` 填值 | **统一严格 NaN**；⚠️ **vnpy 自身各算子不一致**（`ts_sum` 严格、`ts_min/max/mean/std/corr` 填值） | L-C（口径自定，关键是显式）+ L-D 实测 | `test_a25/a26`；变异 `m7`；差分 D3 |
 
 ⚠️ **A4 是唯一一处依赖「非论文」来源的决策**：BRAIN 官方算子文档尚未获取（设计文档 §2.3 待办、§7.3）。
 本库的 `days_ago` 口径依社区转述实现并**显式标注**，取到官方文档后必须复核并更新
@@ -82,4 +85,5 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 10 项歧义全部决策并绑定测试；因子层 7 类待决；4 项无法判定 |
-| **v0.2** | 2026-10-09 | 论文原文核对后：①`indneutralize` 去均值语义 **L-A 定案**（从歧义移出）②`adv{d}` **L-A 定案**为美元成交额 ③新增 A11 `decay_linear` 权重顺序（22 因子）、A12 非整数窗口 floor（40 因子）、A13 `signedpower`、A14 `adv` 映射、A15 逐元素层 ④A4（argmax 基准）、A5（scale 轴向）确认为**论文自身歧义**，待 BRAIN/vnpy 定案 |
+| **v0.3** | 2026-10-09 | 加入 vnpy 差分实测：A1（vnpy `ts_std` ddof=0 且自身不一致）、A4（argmax 1-based 获 L-D 支持）、A5（`cs_scale` 同为每日截面）、**A11（`decay_linear` 方向与 vnpy 相反 ⇒ 22 因子的最高风险项）**；新增 A16（零和行 0 vs NaN）、A17（`signedpower` 指数可为面板）、A18（预热期策略 vs vnpy 的不一致）；A15 标记 M2 已交付 |
+| v0.2 | 2026-10-09 | 论文原文核对后：①`indneutralize` 去均值语义 **L-A 定案**（从歧义移出）②`adv{d}` **L-A 定案**为美元成交额 ③新增 A11 `decay_linear` 权重顺序（22 因子）、A12 非整数窗口 floor（40 因子）、A13 `signedpower`、A14 `adv` 映射、A15 逐元素层 ④A4（argmax 基准）、A5（scale 轴向）确认为**论文自身歧义**，待 BRAIN/vnpy 定案 |
