@@ -34,6 +34,7 @@ if str(ROOT / "src") not in sys.path:
 
 from alpha101v import panel as panel_contract  # noqa: E402
 from alpha101v import registry  # noqa: E402
+from alpha101v.adapters.adjust import load_xdxr_events  # noqa: E402
 from alpha101v.adapters.industry import load_sw_industry  # noqa: E402
 from alpha101v.adapters.mongo import DEFAULT_URI, load_panel  # noqa: E402
 from alpha101v.neutralize import ind_neutralize  # noqa: E402
@@ -66,6 +67,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261009)
     parser.add_argument("--uri", default=DEFAULT_URI)
     parser.add_argument("--no-industry", action="store_true")
+    parser.add_argument("--adjust", default="hfq", choices=("hfq", "qfq", "none"))
     args = parser.parse_args()
 
     print(f"■ 取样：{args.start} ~ {args.end}，n_codes={args.n_codes}，行业层级={args.level}")
@@ -73,7 +75,7 @@ def main() -> int:
     print(f"  代码数 {len(codes)}，示例 {codes[:6]}")
 
     industry = None
-    panels = load_panel(codes, args.start, args.end, uri=args.uri)
+    panels = load_panel(codes, args.start, args.end, uri=args.uri, adjust=args.adjust)
     index, columns = panels["close"].index, panels["close"].columns
     print(f"  面板形状：{len(index)} 交易日 × {len(columns)} 只（{index[0].date()} ~ {index[-1].date()}）")
 
@@ -95,6 +97,23 @@ def main() -> int:
     inside = ((vwap >= low) & (vwap <= high)) & mask
     ratio = float(inside.to_numpy().sum() / max(mask.to_numpy().sum(), 1))
     print(f"\n■ 单位口径：vwap ∈ [low, high] 自洽率 = {ratio:.4%}（有效格子 {int(mask.to_numpy().sum())}）")
+
+    # ---- 2.5) 复权诊断：除权日的收益率是否回到了涨跌幅限制内 ----
+    events = load_xdxr_events(codes, args.start, args.end, uri=args.uri)
+    worst = 0.0
+    hit = 0
+    for row in events.itertuples(index=False):
+        day = pd.Timestamp(row.date)
+        if row.code not in panels["returns"].columns or day not in panels["returns"].index:
+            continue
+        value = panels["returns"][row.code].loc[day]
+        if np.isfinite(value):
+            hit += 1
+            worst = max(worst, abs(float(value)))
+    print(
+        f"\n■ 复权（模式 {args.adjust}）：区间内除权事件 {len(events)} 个，命中面板 {hit} 个；"
+        f"这些日期的最大 |收益率| = {worst:.2%}（应 < 21%，未复权的假跳空可达 −35%）"
+    )
 
     # ---- 3) 试点因子 ----
     print("\n■ 试点因子（真实数据；**不看 IC**，只看算得出/不产 inf/覆盖面）")
@@ -137,6 +156,8 @@ def main() -> int:
             failures.append(f"{name} 全为 NaN")
     if not (ratio > 0.99):
         failures.append(f"vwap 单位口径自洽率过低：{ratio:.2%}")
+    if hit and worst >= 0.21:
+        failures.append(f"除权日复权后收益率仍达 {worst:.2%}（复权可能失效）")
 
     print()
     if failures:

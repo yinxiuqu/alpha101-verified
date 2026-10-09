@@ -31,6 +31,7 @@ from collections.abc import Iterable, Sequence
 import pandas as pd
 
 from ..panel import returns_from_close, vwap_from_amount
+from .adjust import ADJUST_MODES, adjust_price_panels, cumulative_factors, load_xdxr_events
 
 __all__ = ["load_cap_panel", "load_panel", "load_price_panels"]
 
@@ -38,6 +39,9 @@ DEFAULT_URI = "mongodb://127.0.0.1:27017"
 DEFAULT_DATABASE = "quantaxis"
 DEFAULT_DAY_COLLECTION = "stock_day"
 DEFAULT_BASIC_COLLECTION = "stock_daily_basic"
+
+#: 复权缓冲：为「除权事件日前收」多取一段历史，再由 load_panel 切回 [start, end]。
+_ADJUST_BUFFER_DAYS = 30
 
 #: MongoDB 原始字段名 → 面板字段名（``vol`` → ``volume``，单位仍是「手」）。
 DAY_FIELD_MAP: dict[str, str] = {
@@ -174,6 +178,7 @@ def load_panel(
     industry: pd.DataFrame | None = None,
     cap_field: str = "total_mv",
     ffill_cap: bool = False,
+    adjust: str = "hfq",
     uri: str = DEFAULT_URI,
     database: str = DEFAULT_DATABASE,
 ) -> dict[str, pd.DataFrame]:
@@ -186,24 +191,44 @@ def load_panel(
     ffill_cap : 是否对 ``cap`` 做**前向填充**。默认 ``False``（缺就是 NaN）。
         置 ``True`` 是**允许的**：市值是「当日已知量」，前向填充只用过去的信息，
         不构成前视（设计文档 §9 R3 针对的是未来信息）；但这是调用方的显式选择。
+    adjust : ``"hfq"``（默认，**因果/PIT 安全**）/ ``"qfq"``（仅供展示，全样本使用时含前视）/
+        ``"none"``（不做复权，除权日会出现假跳空）。见 :mod:`alpha101v.adapters.adjust`。
+
+    复权流程：为了算「除权日前收」，内部会**多取 30 个自然日**的缓冲，
+    复权后再切回 ``[start, end]``，因此返回面板的日期区间严格等于请求区间。
+    复权只作用于价格类字段（``close/Open/high/low/vwap``）；``volume/amount/cap`` 保持原值，
+    ``returns`` 由**复权后**的 ``close`` 计算（这正是复权的目的）。
     """
     codes = sorted({str(code) for code in codes})
-    panels = load_price_panels(codes, start, end, uri=uri, database=database)
+    if adjust not in ADJUST_MODES:
+        raise ValueError(f"adjust 只接受 {ADJUST_MODES}，收到 {adjust!r}")
 
+    buffer_start = (pd.Timestamp(start) - pd.Timedelta(days=_ADJUST_BUFFER_DAYS)).strftime("%Y-%m-%d")
+    panels = load_price_panels(codes, buffer_start, end, uri=uri, database=database)
     panels["vwap"] = vwap_from_amount(panels["amount"], panels["volume"])
+
+    if adjust == "none":
+        factors = cumulative_factors(panels["close"], None, mode="none")
+    else:
+        events = load_xdxr_events(codes, buffer_start, end, uri=uri, database=database)
+        factors = cumulative_factors(panels["close"], events, mode=adjust)
+    panels = adjust_price_panels(panels, factors)
+
+    keep = panels["close"].index >= pd.Timestamp(start)
+    if not keep.any():
+        raise ValueError(f"{start}~{end} 区间内没有交易日数据")
+    panels = {name: frame.loc[keep] for name, frame in panels.items()}
     panels["returns"] = returns_from_close(panels["close"])
 
+    index, columns = panels["close"].index, panels["close"].columns
     cap = load_cap_panel(codes, start, end, field=cap_field, uri=uri, database=database)
-    cap = cap.reindex(index=panels["close"].index, columns=panels["close"].columns)
+    cap = cap.reindex(index=index, columns=columns)
     if ffill_cap:
         cap = cap.ffill()
     panels["cap"] = cap
 
     if industry is not None:
-        panels["ind"] = industry.reindex(
-            index=panels["close"].index, columns=panels["close"].columns
-        )
+        panels["ind"] = industry.reindex(index=index, columns=columns)
 
     # 统一 index/columns（各面板必须共享同一契约；由 panel.validate_panel 再复核）
-    index, columns = panels["close"].index, panels["close"].columns
     return {name: frame.reindex(index=index, columns=columns) for name, frame in panels.items()}
