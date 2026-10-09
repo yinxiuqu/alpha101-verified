@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha101v"
+version = "0.1.0"
+description = "A verifiable implementation of the 101 Formulaic Alphas — operators with explicit conventions plus a mutation-tested verification suite."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "alpha101-verified contributors" }]
+keywords = ["alpha101", "quantitative-finance", "factor-model", "verification", "clean-room"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+# Runtime dependencies are deliberately minimal: numpy / pandas / scipy only.
+# statsmodels and vnpy are TEST-ONLY references (differential comparison), never runtime deps.
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "statsmodels>=0.14"]
+
+[project.urls]
+Paper = "https://arxiv.org/abs/1601.00991"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
