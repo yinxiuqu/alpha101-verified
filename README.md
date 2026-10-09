@@ -80,6 +80,8 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 |---|---|
 | 20 个算子 API 恰好这些、无多无少 | `tests/test_operators.py::test_api_surface_is_exactly_twenty` |
 | 「ddof 默认 1」「预热期必须 NaN」「scale 是 axis=1」等口径 | `docs/operators.md` §3 + 对应 `test_a*` / `test_b*` |
+| 论文规范文本已完整入库（L2 基准） | `docs/paper_formulas.md` §2：101/101 条公式、**0 条括号不平衡**、可复现的 `curl`+`pdftotext` 命令与 PDF SHA256 |
+| 设计文档 §3.2 依赖表经论文原文独立证实 | `docs/paper_formulas.md` §8：5/5 一致（连因子编号列表都逐一相同） |
 | 与 `statsmodels.OLS` 残差逐点一致（`rtol=1e-10`） | `test_c02`（`ind_neutralize`）、`test_c10`（`neutral`） |
 | 残差与行业哑变量正交、行业内残差均值为 0 | `test_c01` |
 | 共线/空行业不抛 `LinAlgError` | `test_c03`、`test_c12` |
@@ -102,7 +104,8 @@ alpha101-verified/
 ├── conftest.py                 # 让 src 布局免安装可导入
 ├── docs/
 │   ├── Alpha101_修复发布决策与验证协议_v0.1.md   # 设计依据（内容版本 v0.2）
-│   ├── operators.md            # ★ 算子口径唯一权威（含 6 个歧义点决策 + 4 条文档勘误）
+│   ├── operators.md            # ★ 算子口径唯一权威（含歧义点决策 + 4 条文档勘误 + 论文核对回写）
+│   ├── paper_formulas.md       # ★ 论文规范入库：101/101 条公式逐字（括号平衡校验 0 不平衡）
 │   ├── verification.md         # 六层协议与验证结果矩阵
 │   ├── ambiguities.md          # 规范歧义清单（已决策 / 待决 / 无法判定）
 │   └── deviations.md           # 与论文/GPL 原实现的偏差清单（101 行清单 M3 生成）
@@ -139,7 +142,7 @@ alpha101-verified/
 |---|---|---|
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
-| M2 | 3~5 个试点因子（`alpha101` 可手算、`alpha4`、`alpha5`、`alpha41`、`alpha56`）+ L2/L3/L4 首跑 | ⛔ |
+| M2 | 3~5 个试点因子（`alpha101` 可手算、`alpha4`、`alpha5`、`alpha41`、`alpha56`）+ L2/L3/L4 首跑 | ⛔ **前置：①非整数窗口 `floor(d)` 改码（40 因子吃紧）②`elemwise` 层（15 因子需要）——见 `docs/deviations.md` §1.2** |
 | M3 | 101 个因子 + 规范对照 + 偏差清单 | ⛔ |
 | M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |
 | M5 | golden 快照 + 文档 + 发布 | ⛔ |
