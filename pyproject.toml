@@ -27,6 +27,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7", "statsmodels>=0.14"]
+# 可选数据适配（本地 MongoDB）。**不进 dependencies**：适配层延迟导入，包根永不加载它。
+mongo = ["pymongo>=4"]
 
 [project.urls]
 Paper = "https://arxiv.org/abs/1601.00991"

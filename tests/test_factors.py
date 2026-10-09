@@ -20,7 +20,7 @@ from scipy.stats import rankdata
 
 from alpha101v import factors, registry
 
-PILOT_NAMES = ("alpha101", "alpha4", "alpha41", "alpha56")
+PILOT_NAMES = ("alpha101", "alpha4", "alpha5", "alpha41", "alpha56")
 FIELDS = ("close", "Open", "high", "low", "volume", "vwap", "returns", "amount", "cap", "ind")
 
 
@@ -57,6 +57,17 @@ def make_panel(days: int = 30, names: int = 4, seed: int = 20260101) -> dict[str
 PANEL = make_panel()
 
 
+def rankdata_per_day(frame: pd.DataFrame) -> np.ndarray:
+    """独立第二实现的构件：逐日截面 `scipy.stats.rankdata`/n（NaN 不参与、保持 NaN）。"""
+    out = np.full(frame.shape, np.nan)
+    for t in range(len(frame)):
+        row = frame.iloc[t].to_numpy(dtype=float)
+        mask = np.isfinite(row)
+        if mask.any():
+            out[t, mask] = rankdata(row[mask]) / mask.sum()
+    return out
+
+
 def one(value: float, column: str = "X") -> pd.DataFrame:
     return pd.DataFrame([[value]], index=pd.date_range("2021-01-04", periods=1), columns=[column])
 
@@ -71,6 +82,7 @@ def one(value: float, column: str = "X") -> pd.DataFrame:
     [
         ("alpha101", ("close", "Open", "high", "low")),
         ("alpha4", ("low",)),
+        ("alpha5", ("close", "Open", "vwap")),
         ("alpha41", ("high", "low", "vwap")),
         ("alpha56", ("returns", "cap")),
     ],
@@ -112,7 +124,7 @@ def test_factor_is_pit_safe_truncation_consistency(name):
 
 @pytest.mark.parametrize(
     ("name", "broken_field"),
-    [("alpha101", "close"), ("alpha41", "vwap"), ("alpha56", "cap")],
+    [("alpha101", "close"), ("alpha5", "vwap"), ("alpha41", "vwap"), ("alpha56", "cap")],
 )
 def test_factor_rejects_misaligned_panels(name, broken_field):
     """多字段因子的入参必须同 (index, columns) 契约，否则显式报错（而非静默外连接出 NaN）。
@@ -192,6 +204,27 @@ def test_alpha4_is_invariant_under_positive_scaling_of_low():
     k = 7.25
     base = factors.alpha4(panel["low"])
     scaled = factors.alpha4(panel["low"] * k)
+    np.testing.assert_allclose(scaled.to_numpy(), base.to_numpy(), rtol=1e-12, atol=1e-15, equal_nan=True)
+
+
+def test_alpha5_matches_independent_second_implementation():
+    """`rank(open − Σ10vwap/10) · (−1·|rank(close − vwap)|)`：用 `rankdata` + pandas 滚动和另写一份。"""
+    panel = make_panel(days=18, names=4, seed=53)
+    out = factors.alpha5(panel["close"], panel["Open"], panel["vwap"])
+
+    mean_vwap = panel["vwap"].rolling(10, min_periods=10).sum() / 10.0
+    spread_rank = rankdata_per_day(panel["Open"] - mean_vwap)
+    deviation_rank = rankdata_per_day(panel["close"] - panel["vwap"])
+    expected = spread_rank * (-1.0 * np.abs(deviation_rank))
+    np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-12, atol=1e-15, equal_nan=True)
+
+
+def test_alpha5_is_invariant_under_positive_scaling_of_prices():
+    """两处都只依赖**同量纲价格之差**，且外面套的都是截面 rank ⇒ 整体 ×k 后逐点不变。"""
+    panel = make_panel(days=16, names=3, seed=59)
+    k = 5.5
+    base = factors.alpha5(panel["close"], panel["Open"], panel["vwap"])
+    scaled = factors.alpha5(panel["close"] * k, panel["Open"] * k, panel["vwap"] * k)
     np.testing.assert_allclose(scaled.to_numpy(), base.to_numpy(), rtol=1e-12, atol=1e-15, equal_nan=True)
 
 
@@ -286,6 +319,7 @@ def test_alpha56_is_invariant_under_positive_scaling_of_cap():
 EXPECTED_OPERATOR_CALLS: dict[str, dict[str, int]] = {
     "alpha101": {},                                # ((close - open) / ((high - low) + .001))
     "alpha4": {"rank": 1, "ts_rank": 1},           # -1 * Ts_Rank(rank(low), 9)
+    "alpha5": {"ts_sum": 1, "rank": 2, "abs_": 1},  # rank(open - Σvwap/10) · (-1·|rank(close - vwap)|)
     "alpha41": {},                                 # ((high * low)^0.5) - vwap
     # 论文原文 `sum(returns, 10) / sum(sum(returns, 2), 3)` 含 **3 处** sum 调用（嵌套那处本身算两次），
     # 加上两个 rank —— 逐字统计得来的多重集，实现必须与之一致。
@@ -297,7 +331,7 @@ EXPECTED_OPERATOR_CALLS: dict[str, dict[str, int]] = {
 def test_l2_operator_call_multiset_matches_paper(name, monkeypatch):
     """记录因子实际调用的算子，与论文公式的算子多重集逐一比对（M3 会升级为 AST 逐节点比对）。"""
     calls: collections.Counter[str] = collections.Counter()
-    for operator_name in ("rank", "ts_rank", "ts_sum"):
+    for operator_name in ("rank", "ts_rank", "ts_sum", "abs_"):
         original = getattr(factors, operator_name)
 
         def spy(*args, _name=operator_name, _original=original, **kwargs):

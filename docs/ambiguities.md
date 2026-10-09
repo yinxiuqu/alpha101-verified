@@ -46,6 +46,7 @@
 | A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log(0/负)` → NaN（不产生 -inf） | L-A（论文列为函数而非算子） | ✅ M2 已交付：`tests/test_elemwise.py` |
 | A16 | `scale` 零和行的取值 | `0` vs `NaN` | **NaN**（0/0 未定义；拒绝把「无数据」伪装成 0）；⚠️ **vnpy 实测给 0** | L-C + 设计文档 §3.3 缺陷 7 的同类原则 | `test_b07`；差分 D5 |
 | A17 | `signedpower` 的指数可否是面板 | 常数 vs 表达式 | **两者都支持**：标量或同形面板（论文 Alpha#84 的指数是 `delta(close, …)`） | L-A（论文原文即是面板） | `test_signedpower_accepts_a_panel_exponent...` |
+| A19 | `cap` 用总市值还是流通市值 | `total_mv`（万元）vs `circ_mv`（万元） | 冒烟用 **`total_mv`**；对 `rank` 型因子（如 `alpha56`）**两者等价**（正数缩放不变），对量纲敏感的组合会有差异 ⇒ **必须显式声明** | L-C（`rank` 不变性）+ 面板契约 §7.4「单位必须显式声明」 | `test_alpha56_is_invariant_under_positive_scaling_of_cap`；`docs/verification.md` §1.3 |
 | A18 | 预热期是否填值 | 严格 NaN vs `min_samples=1` 填值 | **统一严格 NaN**；⚠️ **vnpy 自身各算子不一致**（`ts_sum` 严格、`ts_min/max/mean/std/corr` 填值） | L-C（口径自定，关键是显式）+ L-D 实测 | `test_a25/a26`；变异 `m7`；差分 D3 |
 
 ⚠️ **A4 是唯一一处依赖「非论文」来源的决策**：BRAIN 官方算子文档尚未获取（设计文档 §2.3 待办、§7.3）。
@@ -85,5 +86,6 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 10 项歧义全部决策并绑定测试；因子层 7 类待决；4 项无法判定 |
-| **v0.3** | 2026-10-09 | 加入 vnpy 差分实测：A1（vnpy `ts_std` ddof=0 且自身不一致）、A4（argmax 1-based 获 L-D 支持）、A5（`cs_scale` 同为每日截面）、**A11（`decay_linear` 方向与 vnpy 相反 ⇒ 22 因子的最高风险项）**；新增 A16（零和行 0 vs NaN）、A17（`signedpower` 指数可为面板）、A18（预热期策略 vs vnpy 的不一致）；A15 标记 M2 已交付 |
+| **v0.4** | 2026-10-09 | 新增 A19（`cap` 用总市值还是流通市值：`rank` 型因子等价，但必须显式声明）；真实 A 股端到端见 `docs/verification.md` §1.3 |
+| v0.3 | 2026-10-09 | 加入 vnpy 差分实测：A1（vnpy `ts_std` ddof=0 且自身不一致）、A4（argmax 1-based 获 L-D 支持）、A5（`cs_scale` 同为每日截面）、**A11（`decay_linear` 方向与 vnpy 相反 ⇒ 22 因子的最高风险项）**；新增 A16（零和行 0 vs NaN）、A17（`signedpower` 指数可为面板）、A18（预热期策略 vs vnpy 的不一致）；A15 标记 M2 已交付 |
 | v0.2 | 2026-10-09 | 论文原文核对后：①`indneutralize` 去均值语义 **L-A 定案**（从歧义移出）②`adv{d}` **L-A 定案**为美元成交额 ③新增 A11 `decay_linear` 权重顺序（22 因子）、A12 非整数窗口 floor（40 因子）、A13 `signedpower`、A14 `adv` 映射、A15 逐元素层 ④A4（argmax 基准）、A5（scale 轴向）确认为**论文自身歧义**，待 BRAIN/vnpy 定案 |

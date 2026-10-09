@@ -17,11 +17,12 @@
 * 入参同 (index, columns) 契约；**绝不原地修改入参**（先校验，再计算）。
 * 未定义/数据不足 → `NaN`（不做 `fillna(0)`，见设计文档 §3.3 缺陷 7）。
 
-试点覆盖（M2 计划）
--------------------
+试点覆盖（设计文档 §7.7 的 5 个）
+--------------------------------
 ``alpha101``（纯算术，可手算）/ ``alpha4``（截面 rank → 时序 ts_rank）/
-``alpha41``（幂运算 + vwap 单位口径）/ ``alpha56``（**vnpy 唯一因缺失 `cap` 未实现的因子**）。
-``alpha5`` 依赖逐元素函数 ``abs``，待 `elemwise` 层落地后补（已于 M2 交付，见 ``elemwise.py``）。
+``alpha5``（**依赖逐元素 `abs`**，是 `elemwise` 层的首个消费者）/
+``alpha41``（幂运算 + vwap 单位口径）/
+``alpha56``（**vnpy 唯一因缺失 `cap` 未实现的因子**）。
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from .elemwise import abs_
 from .operators import (
     _as_frame,
     _check_numeric,
@@ -40,7 +42,7 @@ from .operators import (
     ts_sum,
 )
 
-__all__ = ["PILOT_FACTORS", "alpha4", "alpha41", "alpha56", "alpha101"]
+__all__ = ["PILOT_FACTORS", "alpha4", "alpha41", "alpha5", "alpha56", "alpha101"]
 
 
 def _panels(**named: object) -> dict[str, pd.DataFrame]:
@@ -93,6 +95,21 @@ def alpha4(low: pd.DataFrame) -> pd.DataFrame:
     """
     p = _panels(low=low)
     return -1.0 * ts_rank(rank(p["low"]), 9)
+
+
+def alpha5(close: pd.DataFrame, Open: pd.DataFrame, vwap: pd.DataFrame) -> pd.DataFrame:
+    """**Alpha#5**（论文逐字）：``(rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap)))))``。
+
+    出处：arXiv:1601.00991v3, Appendix A「Formulaic Expressions for Alphas」，`Alpha#5`。
+
+    结构：10 日均量价（`sum(vwap,10)/10`）离差取**截面 rank** ×
+    「收盘对 vwap 离差」的**截面 rank 的绝对值**再取负——典型「量价背离」型因子。
+    本因子是 **`elemwise.abs_` 的首个消费者**（论文里 `abs` 属 Functions 而非 Operators）。
+    单位提示：两处都只依赖**同量纲价格之差**，因此对价格整体缩放不变（已在测试中断言）。
+    """
+    p = _panels(close=close, Open=Open, vwap=vwap)
+    mean_vwap = ts_sum(p["vwap"], 10) / 10.0
+    return rank(p["Open"] - mean_vwap) * (-1.0 * abs_(rank(p["close"] - p["vwap"])))
 
 
 def alpha41(high: pd.DataFrame, low: pd.DataFrame, vwap: pd.DataFrame) -> pd.DataFrame:
@@ -150,6 +167,16 @@ PILOT_FACTORS: tuple[FactorSpec, ...] = (
         paper_ref="Appendix A, Alpha#4（逐字：(-1 * Ts_Rank(rank(low), 9))）",
         status="partial",
         notes="截面 rank → 9 日 ts_rank；pct/序号口径差异只影响全局常数，不影响截面排序",
+    ),
+    FactorSpec(
+        name="alpha5",
+        func=alpha5,
+        paper_ref=(
+            "Appendix A, Alpha#5（逐字："
+            "(rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap)))))）"
+        ),
+        status="partial",
+        notes="elemwise.abs_ 的首个消费者；只依赖同量纲价格之差 ⇒ 对价格缩放不变",
     ),
     FactorSpec(
         name="alpha41",

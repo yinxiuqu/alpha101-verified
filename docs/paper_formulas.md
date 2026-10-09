@@ -266,6 +266,10 @@ Alpha#101: ((close - open) / ((high - low) + .001))
 | `alpha41` | `(((high * low)^0.5) - vwap)` | 无（算术 + `^0.5`） | `high, low, vwap` | 纯截面；验证幂运算与单位 |
 | `alpha56` | `(0 - (1 * (rank((sum(returns, 10) / sum(sum(returns, 2), 3))) * rank((returns * cap)))))` | `rank`, `sum` | `returns, cap` | **vnpy 唯一因缺 `cap` 未实现的因子**（设计文档 §4.3.1）→ 补齐缺口的第一块证据 |
 
+📌 **落地状态（2026-10-09，M2 完成）**：上表 5 个试点因子**已全部实现**并通过验证
+（`src/alpha101v/factors.py`，状态一律 `partial`）；其中 `alpha5` 依赖逐元素 `abs`，
+是本项目 `elemwise` 层的首个消费者，`alpha56` 因 vnpy 缺 `cap` 而**无第三方可差分**。
+
 ### 6.1 `alpha4` 的一个有用推论（口径差异的影响面分析）
 
 `alpha4 = -1 * ts_rank(rank(low), 9)`：`ts_rank` 的输出**直接就是因子值**。

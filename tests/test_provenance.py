@@ -114,3 +114,26 @@ def test_source_does_not_import_third_party_factor_libraries():
         if pattern.search(path.read_text(encoding="utf-8"))
     ]
     assert not offenders, f"运行时源码引入了被禁依赖：{offenders}"
+
+
+def test_pymongo_only_allowed_as_lazy_import_inside_adapters():
+    """``pymongo`` 只允许在 ``src/alpha101v/adapters/`` 内以**函数级延迟导入**出现。
+
+    这样 ``import alpha101v`` 永远不会拉进数据库驱动（运行时依赖仍只有 numpy/pandas/scipy），
+    而适配层又能按需使用（``pip install 'alpha101v[mongo]'``）。
+    """
+    top_level = re.compile(r"^(?:import|from)\s+pymongo\b", re.MULTILINE)
+    lazy = re.compile(r"^\s+(?:import|from)\s+pymongo\b", re.MULTILINE)
+    for path in sorted(SRC.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        relative = str(path.relative_to(ROOT))
+        if "adapters" not in path.parts:
+            assert not top_level.search(text) and not lazy.search(text), (
+                f"适配层之外出现 pymongo：{relative}"
+            )
+            continue
+        assert not top_level.search(text), f"适配层不得在模块顶层导入 pymongo（必须延迟）：{relative}"
+    adapter_dir = SRC / "alpha101v" / "adapters"
+    assert any(lazy.search(p.read_text(encoding="utf-8")) for p in adapter_dir.glob("*.py")), (
+        "适配层应当有函数级 pymongo 延迟导入"
+    )
