@@ -7,12 +7,12 @@
 | 项 | 状态（2026-10-09） |
 |---|---|
 | 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**643** 个测试全绿（12 个文件）；7/7 变异注入被抓住 |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**646** 个测试全绿（13 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
-| 因子层 | ✅ **101/101 已实现**；状态 `partial` 74 / **`ambiguous` 27** / `verified` **0**（诚实计数：`verified` 需六条门槛，M4/M5 未完成） |
+| 因子层 | ✅ **101/101 已实现**；状态 `partial` 74 / **`ambiguous` 27** / `verified` **0**（诚实计数：`verified` 需六条门槛，仅剩 M5 golden 快照未完成） |
 | **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
-| 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**（算子级）；✅ L4 不变量全量通过；⛔ 因子级差分（M4）／golden 快照（M5）未完成 |
-| `verified` 因子数 | **0/101**（六条门槛里 L3-因子级差分（M4）与 L5 golden（M5）未满足——诚实计数） |
+| 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**；✅ **L3 因子级差分 82 个可比因子 0 待查**；✅ L4 不变量全量通过；⛔ golden 快照（M5）未完成 |
+| `verified` 因子数 | **0/101**（六条门槛里只剩 L5 golden 快照（M5）未满足——诚实计数） |
 | 许可 | **MIT**（clean-room，零 GPL 血缘；CI 有机械守卫） |
 
 ---
@@ -67,7 +67,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 |---|---|---|
 | **L1 算子层** | 20 个算子的数学定义与权威实现对拍（pandas/scipy/statsmodels） | ✅ **已做**，20/20；见 `docs/operators.md` |
 | **L2 规范对照** | 论文附录公式 vs 实现 AST 逐节点比对 → 等价/近似/偏离 | ⛔ M3 |
-| **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | 🟡 **算子层已做**（24 项，见 `docs/verification.md` §1.2）；**因子层 M4**（对拍范围仅 82/101） |
+| **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | ✅ **算子层 + 因子层均已做**：算子层 24 项；因子层 82 个可比因子 **0 待查**（`docs/verification.md` §1.5）；19 个无第三方参照 |
 | **L4 不变量与元测试** | 输入不可变性 / 时间截断一致性 / 未来扰动 / 缩放不变性 / **变异测试** | 🟡 **算子层已做**（`tests/test_invariants.py`、`tests/test_mutation.py`），因子层待 M2 |
 | **L5 golden 快照** | 固定种子面板上冻结 101 个因子输出，防回归 | ⛔ M5 |
 | **L6 统计合理性** | IC 符号/衰减形状/暴露检查 | ⛔ 需因子与 A 股数据；**明文禁止用「IC 好看」证明代码正确** |
@@ -93,6 +93,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 未用将被删除的 pandas API（原实现死于 `as_matrix`） | `test_no_deprecated_pandas_api_warnings`（22 个调用点在 `FutureWarning`/`DeprecationWarning` 转异常下运行，0 警告） |
 | 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：24 项中 18 项对齐后逐点一致（含 argmax 基准、ts_rank 口径、decay 方向对齐后） |
 | **101 个因子与论文公式结构一致** | `tools/conformance_report.py`：算子／字段／字面量三重对照 ⇒ **101/101 等价、0 偏离** |
+| **因子级与 vnpy 逐点一致** | `tools/factor_differential.py`：82 个可比因子 0 个「待查」（64 逐点一致 + 18 已归因：2 参照 bug、14 离散平局/数值病态、2 覆盖差异）；19 个因子无第三方参照 |
 | 全量因子的 PIT 与契约 | `tests/test_factors_all.py`：101 个因子逐一验证「可算不产 ±inf／入参不可变／时间截断一致性」 |
 | 复权修正除权日假跳空 | `tests/test_adjust.py`（11 项）+ `tests/test_adapters_real_data.py`（真实数据 35.11% → 7.60%） |
 | 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha5/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
@@ -163,7 +164,8 @@ alpha101-verified/
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
 | **M2** | 5 个试点因子 + L2/L3/L4 首跑 | ✅ **完成**：`floor(d)`、`elemwise` 层、5 个试点因子（`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56`）、算子层 L3 差分、真实 A 股端到端。余项：L2 全量 AST 对照（M3）、因子级差分（M4） |
-| **M3** | 101 个因子 + 规范对照 + 偏差清单 | ✅ **完成**：101/101 因子、L2 对照 101/101 等价、PIT 安全复权、偏差清单由工具生成（`docs/deviations.md` §4） |
+| **M4** | 因子级差分对拍（82 个可比因子）+ 差异归因 | ✅ **完成**：64 一致 + 18 已归因、**0 待查**；顺带实测出参照侧 `quesval2` 取反的 bug（`docs/verification.md` §1.5） |
+| M3 | 101 个因子 + 规范对照 + 偏差清单 | ✅ 完成：101/101 因子、L2 对照 101/101 等价、PIT 安全复权、偏差清单由工具生成（`docs/deviations.md` §4） |
 | M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |
 | M5 | golden 快照 + 文档 + 发布 | ⛔ |
 

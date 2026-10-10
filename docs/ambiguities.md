@@ -51,7 +51,7 @@
 | A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log(0/负)` → NaN（不产生 -inf） | L-A（论文列为函数而非算子） | ✅ M2 已交付：`tests/test_elemwise.py` |
 | A16 | `scale` 零和行的取值 | `0` vs `NaN` | **NaN**（0/0 未定义；拒绝把「无数据」伪装成 0）；⚠️ **vnpy 实测给 0** | L-C + 设计文档 §3.3 缺陷 7 的同类原则 | `test_b07`；差分 D5 |
 | A17 | `signedpower` 的指数可否是面板 | 常数 vs 表达式 | **两者都支持**：标量或同形面板（论文 Alpha#84 的指数是 `delta(close, …)`） | L-A（论文原文即是面板） | `test_signedpower_accepts_a_panel_exponent...` |
-| A20 | 论文中缀 `^` 的语义 | 论文字面 `x^a` vs 保号幂 `sign(x)·|x|^a` | **取保号幂**（负底数也能出值，与算子名自洽）；字面读法下 alpha90 会整片 NaN。**alpha48/alpha90 因此标 ambiguous** | L-A（论文列了 `signedpower(x,a)=x^a` 但公式用 `^`）+ L-C | `test_factors_all` 的 ambiguous 集合断言；差分待 M4 |
+| A20 | 论文中缀 `^` 的语义 | 论文字面 `x^a` vs 保号幂 `sign(x)·|x|^a` | **取保号幂**（负底数也能出值，与算子名自洽）；字面读法下 alpha90 会整片 NaN。**alpha48/alpha90 因此标 ambiguous**。M4 新增证据：vnpy 的 `pow1`（常数指数）**同样是保号幂**，第二实现与本题选择一致 | L-A（论文列了 `signedpower(x,a)=x^a` 但公式用 `^`）+ L-C + L-D | M4 差分（`tools/factor_differential.py`）；vnpy `pow2` 在「负底数 + 非整数指数」时返回 0，与本库的保号幂不同——但 101 个因子里 `^` 的底数全是 `rank(...)`（非负）⇒ 该分歧不会触发 |
 | A21 | `min/max` 两种语义 | 第二参数是数值 vs 表达式 | **数值 ⇒ 时序 `ts_min/ts_max`；表达式 ⇒ 逐元素 `minimum/maximum`**（101 条公式上无冲突，可机械核验） | L-A（论文只定义 `min(x,d)=ts_min(x,d)`） | `tools/conformance_report.py` 分类 + `test_elemwise` |
 | A22 | 逐元素 `min/max` 的缺失语义 | NaN 传播 vs 视为缺失 | **视为缺失**（`np.fmin/fmax`）：一侧 NaN 取另一侧 | L-C 决策（论文未定义）；理由是避免 `max(分支A,分支B)` 型因子整片退化 | `test_minimum_maximum_treat_nan_as_missing` |
 | A23 | 比较/逻辑的缺失语义 | C 语义 False vs NaN 传播 | **NaN 传播**；`\|\|` 取 Kleene 三值 | L-C 决策（论文未定义） | 条件型因子的不变量测试 |
