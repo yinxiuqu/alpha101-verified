@@ -58,13 +58,17 @@ PANEL = make_panel()
 
 
 def rankdata_per_day(frame: pd.DataFrame) -> np.ndarray:
-    """独立第二实现的构件：逐日截面 `scipy.stats.rankdata`/n（NaN 不参与、保持 NaN）。"""
+    """独立第二实现的构件：逐日截面 `(rankdata − 1)/(n − 1)`（BRAIN 官方 `zero_to_one`）。
+
+    NaN 不参与、保持 NaN；当日仅 1 只有效标的时官方分母为 0 ⇒ NaN（与本库一致）。
+    """
     out = np.full(frame.shape, np.nan)
     for t in range(len(frame)):
         row = frame.iloc[t].to_numpy(dtype=float)
         mask = np.isfinite(row)
-        if mask.any():
-            out[t, mask] = rankdata(row[mask]) / mask.sum()
+        count = int(mask.sum())
+        if count >= 2:
+            out[t, mask] = (rankdata(row[mask]) - 1.0) / (count - 1.0)
     return out
 
 
@@ -190,11 +194,12 @@ def test_alpha4_matches_independent_second_implementation():
 
     low = panel["low"].to_numpy(dtype=float)
     days, names = low.shape
-    cross_rank = np.vstack([rankdata(row) / names for row in low])  # 每日截面 pct rank
+    # BRAIN 官方归一化：截面 (名次−1)/(n−1) ∈ [0,1]；时序 rank 同为 (名次−1)/(d−1)
+    cross_rank = np.vstack([(rankdata(row) - 1.0) / (names - 1.0) for row in low])
     expected = np.full_like(low, np.nan)
     for t in range(8, days):
         for c in range(names):
-            expected[t, c] = -rankdata(cross_rank[t - 8 : t + 1, c])[-1] / 9.0
+            expected[t, c] = -(rankdata(cross_rank[t - 8 : t + 1, c])[-1] - 1.0) / (9.0 - 1.0)
     np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-12, atol=1e-15, equal_nan=True)
 
 
@@ -278,11 +283,11 @@ def test_alpha56_matches_independent_second_implementation():
         ratio = numer[t] / denom[t]
         mask = np.isfinite(ratio)
         if mask.any():
-            ratio_rank[t, mask] = rankdata(ratio[mask]) / mask.sum()
+            ratio_rank[t, mask] = (rankdata(ratio[mask]) - 1.0) / (mask.sum() - 1.0)
         product = returns[t] * cap[t]
         pmask = np.isfinite(product)
         if pmask.any():
-            product_rank[t, pmask] = rankdata(product[pmask]) / pmask.sum()
+            product_rank[t, pmask] = (rankdata(product[pmask]) - 1.0) / (pmask.sum() - 1.0)
 
     expected = -1.0 * (ratio_rank * product_rank)
     np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-12, atol=1e-15, equal_nan=True)

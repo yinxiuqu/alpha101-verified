@@ -63,13 +63,14 @@ def test_aligned_operators_match_vnpy_pointwise():
         "ts_max(x,5)",
         "ts_argmax(x,5)",
         "ts_argmin(x,5)",
-        "ts_rank(x,5,pct=True)",
+        "ts_rank(x,5,one_over_n)",
         "correlation(x,y,5)",
         "covariance(x,y,5,ddof=0)",
         'decay_linear(x,5,order="oldest_first")',
         "scale(x,1)",
-        'rank(x,method="min") [并列面板]',
-        "rank(x) 默认 [无并列面板]",
+        'rank(x,method="min",one_over_n) [并列面板]',
+        "rank(x,one_over_n) [无并列面板]",
+        "stddev(x,5) 默认 [D2 已消失] vs vnpy",
     ):
         assert _verdict(output, name) == "一致（逐点）", f"{name} 未与 vnpy 逐点一致"
 
@@ -80,11 +81,13 @@ def test_documented_differences_still_exist():
     output = proc.stdout
     for name in (
         "D1 decay_linear 默认(recent_first) vs vnpy",
-        "D2 stddev 默认(ddof=1) vs vnpy",
         "D3 严格预热 vs vnpy 填值（ts_min）",
         "D4 rank 默认(average) vs vnpy(min) [并列面板]",
         "D5 scale 零和行 vs vnpy",
         "D6 sma（NaN 洞）vs vnpy ts_mean",
+        "D7 rank 默认(zero_to_one) vs vnpy(one_over_n)",
+        "D7b ts_rank 默认(zero_to_one) vs vnpy(one_over_n)",
+        "D8 decay_linear 稀疏(NaN→0) vs vnpy [NaN 洞]",
     ):
         assert _verdict(output, name) == "有差异", f"{name} 的差异消失了，请更新文档与归因"
 

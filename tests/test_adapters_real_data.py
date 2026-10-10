@@ -275,10 +275,11 @@ def industry_panel() -> dict:
     return panel
 
 
-#: 长链因子在**小截面**（18 只）上覆盖率极低，是截面规模问题而非实现缺陷
-#: （同一现象在 alpha96 上由 300 只股票的大样本复现并排除）。此处断言**已记录的当前行为**，
-#: 一旦改善（覆盖率上升）测试会失败并提示更新文档。
-LONG_CHAIN_LOW_COVERAGE = {"alpha97"}
+#: 长链因子在**小截面**（18 只）上覆盖率极低的例外集合 —— **现已为空**。
+#: 历史：alpha97 曾因「短窗口相关 + 多层 rank/decay 的长链在小截面上断裂」覆盖率仅 0.09%，
+#: 2026-10-10 按 BRAIN 官方口径落地（`rank`/`ts_rank` 归一化 `[0,1]`、`decay_linear` 稀疏、
+#: `ddof=0`）后升到 **94.71%**，该例外随之退役（正是本断言的用途：覆盖率改善必须显式更新文档）。
+LONG_CHAIN_LOW_COVERAGE: set[str] = set()
 
 
 @pytest.mark.parametrize("name", INDUSTRY_FACTORS)

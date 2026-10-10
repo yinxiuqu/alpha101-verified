@@ -137,9 +137,13 @@ def test_a02_sma():
     assert_allclose(values(ops.sma(X5, 3)), [np.nan, np.nan, 2.0, 3.0, 4.0])
 
 
-def test_a03_stddev_default_is_ddof1():
-    """★ 歧义点 ddof：默认 ``ddof=1`` → ``[NaN, NaN, 1, 1, 1]``。"""
-    assert_allclose(values(ops.stddev(X5, 3)), [np.nan, np.nan, 1.0, 1.0, 1.0])
+def test_a03_stddev_default_is_ddof0():
+    """★ 歧义点 ddof：**默认 `ddof=0`（总体口径）** —— BRAIN 官方 `ts_std_dev` 算例
+    「Average the squared deviations: (0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / **5** = 0.0002」
+    （L-B 定案，`docs/operators.md` §3.1/§3.13.3）。样本口径需显式 `ddof=1`。"""
+    expected = np.sqrt(2.0 / 3.0)
+    assert_allclose(values(ops.stddev(X5, 3)), [np.nan, np.nan, expected, expected, expected])
+    assert_allclose(values(ops.stddev(X5, 3, ddof=1)), [np.nan, np.nan, 1.0, 1.0, 1.0])
 
 
 def test_a04_stddev_ddof0():
@@ -179,24 +183,28 @@ def test_a09_product():
     assert_allclose(values(ops.product(X5, 2)), [np.nan, 2.0, 6.0, 12.0, 20.0])
 
 
-def test_a10_ts_rank_ordinal_and_pct():
-    """★ 歧义点 pct：``ts_rank([1,2,3], 3)`` 末值 → 序号口径 3；pct 口径 1.0。
+def test_a10_ts_rank_official_normalization_and_alternatives():
+    """★ 歧义点 normalization：官方 **`zero_to_one` = (名次−1)/(n−1)**。
 
-    默认口径是 ``pct=True``（与截面 rank 同量纲）。
+    官方算例：收盘价 [10, 12, 11, 15, 13]，末值 13 的名次 4、n = 5 ⇒ **3/(5−1) = 0.75**。
+    另两个口径：`one_over_n` = 4/5 = 0.8（vnpy 口径）、`ordinal` = 4.0（序号）。
     """
+    x5 = seq([10, 12, 11, 15, 13])
+    assert_allclose(values(ops.ts_rank(x5, 5))[-1], 0.75)
+    assert_allclose(values(ops.ts_rank(x5, 5, normalization="one_over_n"))[-1], 0.8)
+    assert_allclose(values(ops.ts_rank(x5, 5, normalization="ordinal"))[-1], 4.0)
+    # n = 3 的末值为最大时，官方区间恰好也是 1.0
     x3 = seq([1, 2, 3])
-    assert_allclose(values(ops.ts_rank(x3, 3)), [np.nan, np.nan, 1.0])  # 默认 pct=True
-    assert_allclose(values(ops.ts_rank(x3, 3, pct=True)), [np.nan, np.nan, 1.0])
-    assert_allclose(values(ops.ts_rank(x3, 3, pct=False)), [np.nan, np.nan, 3.0])
+    assert_allclose(values(ops.ts_rank(x3, 3)), [np.nan, np.nan, 1.0])
 
 
-def test_a11_ts_rank_pct_range_and_midrank():
-    """pct 口径值域 ⊆ (0, 1]，中间值的名次为 ``序号/窗口``。"""
+def test_a11_ts_rank_zero_to_one_range_and_midrank():
+    """官方口径值域 ⊆ [0, 1]（**闭区间**：最低 0.0、最高 1.0）；中间名次为 ``(名次−1)/(窗口−1)``。"""
     x5 = seq([5, 1, 4, 2, 3])
-    pct = values(ops.ts_rank(x5, 5))
-    # 窗口末值 = 3，在 [5,1,4,2,3] 中名次为 3（average 法无并列）→ 3/5
-    assert_allclose(pct[-1], 3.0 / 5.0)
-    assert np.all((pct[4:] > 0) & (pct[4:] <= 1))
+    out = values(ops.ts_rank(x5, 5))
+    # 末值 3 在 [5,1,4,2,3] 中名次为 3（average 法无并列）→ (3−1)/(5−1) = 0.5
+    assert_allclose(out[-1], 0.5)
+    assert np.all((out[4:] >= 0) & (out[4:] <= 1))
 
 
 def test_a12_ts_argmax_default_basis_is_days_ago():
@@ -339,19 +347,18 @@ def test_a21_correlation_matches_pandas():
     )
 
 
-def test_a22_covariance_matches_pandas_ddof1():
-    """``covariance`` 默认 ddof=1，与 ``pandas.rolling().cov()`` 逐点一致。
+def test_a22_covariance_default_is_ddof0():
+    """★ ``covariance`` 默认 **ddof=0**（与 ``stddev`` 同一 L-B 定案口径）。
 
-    注意（文档勘误，见 docs/operators.md §5）：设计文档 §8.1 把该用例的期望写成
-    ``1``，实测/推导应为 ``2``：cov([1,2,3],[2,4,6]) = 4 / (3-1) = 2。
-    文档同时要求「与 pandas ``rolling().cov()`` 对拍」，此处以后者为准。
+    cov([1,2,3],[2,4,6])（总体）= 4/3；样本口径（= pandas ``rolling().cov()``）= 4/(3−1) = 2，需显式 ``ddof=1``。
+    （设计文档 §8.1 的期望值 ``1`` 系勘误，见 docs/operators.md §5。）
     """
     x = seq([1, 2, 3, 4, 5])
     y = seq([2, 4, 6, 8, 10])
-    out = values(ops.covariance(x, y, 3))
-    assert_allclose(out, [np.nan, np.nan, 2.0, 2.0, 2.0])
+    assert_allclose(values(ops.covariance(x, y, 3)), [np.nan, np.nan, 4.0 / 3.0, 4.0 / 3.0, 4.0 / 3.0])
+    assert_allclose(values(ops.covariance(x, y, 3, ddof=1)), [np.nan, np.nan, 2.0, 2.0, 2.0])
     assert_allclose(
-        ops.covariance(x, y, 3).to_numpy(),
+        ops.covariance(x, y, 3, ddof=1).to_numpy(),
         x.rolling(3, min_periods=3).cov(y).to_numpy(),
         rtol=1e-10, atol=1e-12,
     )
@@ -365,16 +372,21 @@ def test_a23_covariance_ddof0_is_population_identity():
 
 
 def test_a24_rolling_rank_matches_scipy_per_window():
-    """``rolling_rank`` 与 ``scipy.stats.rankdata(w)[-1]`` 逐窗口一致（§8.1 要求）。"""
+    """``rolling_rank`` 的**序号内核**与 ``scipy.stats.rankdata(w)[-1]`` 逐窗口一致（§8.1 要求），
+    默认再按官方 ``(名次−1)/(n−1)`` 归一化（``normalization="ordinal"`` 取回序号）。"""
     rng = np.random.default_rng(101)
     x = pd.DataFrame(rng.normal(size=(15, 2)), index=pd.date_range("2020-01-06", periods=15, freq="B"))
-    assert ops.rolling_rank(np.array([1.0, 3.0, 2.0])) == rankdata([1.0, 3.0, 2.0])[-1]
+    window = np.array([1.0, 3.0, 2.0])
+    assert ops.rolling_rank(window, normalization="ordinal") == rankdata(window)[-1] == 2.0
+    assert ops.rolling_rank(window) == 0.5  # (2−1)/(3−1)
     # 末值并列 → average 名次（[1,2,2] 的末值名次 = 2.5），与 scipy 默认一致
-    assert ops.rolling_rank(np.array([1.0, 2.0, 2.0])) == rankdata([1.0, 2.0, 2.0])[-1] == 2.5
+    assert ops.rolling_rank(np.array([1.0, 2.0, 2.0]), normalization="ordinal") == rankdata([1.0, 2.0, 2.0])[-1] == 2.5
     arr = x.to_numpy()
     for t in range(4, len(x)):
         for c in range(x.shape[1]):
-            assert ops.rolling_rank(arr[t - 4 : t + 1, c]) == rankdata(arr[t - 4 : t + 1, c])[-1]
+            window = arr[t - 4 : t + 1, c]
+            assert ops.rolling_rank(window, normalization="ordinal") == rankdata(window)[-1]
+            assert np.isclose(ops.rolling_rank(window), (rankdata(window)[-1] - 1.0) / 4.0)
 
 
 def test_a25_min_periods_strict_warmup_for_every_rolling_operator():
@@ -483,16 +495,23 @@ def test_a28_binary_operators_require_aligned_panels():
 # ---------------------------------------------------------------------------
 
 
-def test_b01_rank_pct_matches_rankdata_over_n():
-    """``rank([10,20,30,40])`` → ``[0.25, 0.5, 0.75, 1.0]``，值域 ⊆ (0, 1]。"""
-    out = ops.rank(ROW)
-    assert_allclose(out.to_numpy().ravel(), [0.25, 0.5, 0.75, 1.0])
-    assert_allclose(out.to_numpy().ravel(), rankdata([10, 20, 30, 40], "average") / 4.0)
-    assert np.all((out.to_numpy() > 0) & (out.to_numpy() <= 1))
+def test_b01_rank_zero_to_one_matches_official_example():
+    """★ 官方算例：``rank((4,3,6,10,2))`` → ``(0.5,0.25,0.75,1,0)`` —— **(名次−1)/(n−1) ∈ [0,1]**
+    （BRAIN 完整文档：「mapping the lowest value to 0.0 and the highest to 1.0」）。"""
+    official = pd.DataFrame([[4.0, 3.0, 6.0, 10.0, 2.0]], index=ROW.index, columns=list("ABCDE"))
+    assert_allclose(ops.rank(official).to_numpy().ravel(), [0.5, 0.25, 0.75, 1.0, 0.0])
+    assert_allclose(
+        ops.rank(official).to_numpy().ravel(),
+        (rankdata([4, 3, 6, 10, 2], "average") - 1.0) / 4.0,
+    )
+    # 旧口径（vnpy 的 名次/n ∈ (0,1]）保留可选
+    assert_allclose(ops.rank(official, normalization="one_over_n").to_numpy().ravel(), [0.6, 0.4, 0.8, 1.0, 0.2])
+    assert_allclose(ops.rank(ROW).to_numpy().ravel(), [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0])
 
 
 def test_b02_rank_ties_policy_is_average():
-    """★ 歧义点：并列策略默认 ``average`` → ``[10,10,30]`` 得 ``[0.5, 0.5, 1.0]``。
+    """★ 歧义点：并列策略默认 ``average`` → ``[10,10,30]`` 的名次 ``[1.5,1.5,3]``
+    ⇒ 官方区间 ``(名次−1)/2`` = ``[0.25, 0.25, 1.0]``。
 
     设计文档 §8.2 把该行期望写成 ``[1/3, 1/3, 1.0]``（标注「average 法」），
     但 ``[1/3, 1/3, 1]`` 实际是 ``min`` 法的结果（文档勘误，见 docs/operators.md §5）。
@@ -502,22 +521,22 @@ def test_b02_rank_ties_policy_is_average():
     """
     ties = pd.DataFrame([[10.0, 10.0, 30.0]], index=ROW.index, columns=list("ABC"))
     average = ops.rank(ties)
-    assert_allclose(average.to_numpy().ravel(), rankdata([10, 10, 30], "average") / 3.0)
-    assert_allclose(average.to_numpy().ravel(), [0.5, 0.5, 1.0])
-    assert_allclose(ops.rank(ties, method="min").to_numpy().ravel(), [1 / 3, 1 / 3, 1.0])
+    assert_allclose(average.to_numpy().ravel(), (rankdata([10, 10, 30], "average") - 1.0) / 2.0)
+    assert_allclose(average.to_numpy().ravel(), [0.25, 0.25, 1.0])
+    assert_allclose(ops.rank(ties, method="min").to_numpy().ravel(), [0.0, 0.0, 1.0])
 
 
-def test_b03_rank_pct_false_returns_ordinal():
-    """``pct=False`` → 序号 1..n（对齐序号口径的参照实现所需）。"""
-    assert_allclose(ops.rank(ROW, pct=False).to_numpy().ravel(), [1.0, 2.0, 3.0, 4.0])
+def test_b03_rank_ordinal_mode_returns_sequence_numbers():
+    """``normalization="ordinal"`` → 序号 1..n（对齐序号口径的参照实现所需）。"""
+    assert_allclose(ops.rank(ROW, normalization="ordinal").to_numpy().ravel(), [1.0, 2.0, 3.0, 4.0])
 
 
 def test_b04_rank_keeps_nan_and_ranks_remainder():
-    """NaN 不参与排序且保持 NaN；分母是当日有效股票数。"""
+    """NaN 不参与排序且保持 NaN；分母是当日**有效**股票数（n = 3 ⇒ (名次−1)/2）。"""
     row = pd.DataFrame([[10.0, np.nan, 30.0, 40.0]], index=ROW.index, columns=list("ABCD"))
     out = ops.rank(row).to_numpy().ravel()
     assert np.isnan(out[1])
-    assert_allclose(out[[0, 2, 3]], rankdata([10, 30, 40], "average") / 3.0)
+    assert_allclose(out[[0, 2, 3]], (rankdata([10, 30, 40], "average") - 1.0) / 2.0)
     all_nan = pd.DataFrame([[np.nan, np.nan]], index=ROW.index, columns=list("AB"))
     assert ops.rank(all_nan).isna().all().all()
 

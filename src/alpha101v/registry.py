@@ -20,6 +20,7 @@ import inspect
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 __all__ = [
@@ -119,7 +120,24 @@ def run_factor(
         value = panel[field]
         kwargs[field] = value.copy(deep=True) if copy_inputs and isinstance(value, pd.DataFrame) else value
 
-    return meta.func(**kwargs)
+    return _sanitize(meta.func(**kwargs))
+
+
+def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
+    """输出卫生：±inf 一律降级为 NaN（本库契约：**永不输出 ±inf**）。
+
+    为什么需要它：BRAIN 官方 `rank` 归一化是 `[0,1]` **闭区间** ⇒ 当日排名最低的标的取到 **0.0**，
+    于是 `rank(a) / rank(b)` 这类比值型因子（alpha42/57/72/93 等）会**除以 0**。
+    BRAIN 自己的 `divide` 文档就写着「dividing by zero raises an error; to avoid it, use
+    `divide(x, add(y, 0.0001))`」——即这种除法在平台上同样无定义；本库按契约给 **NaN**
+    （「信息不足」），既不输出 inf、也不偷偷加 epsilon 改变数值。
+    """
+    values = result.to_numpy(dtype=float)
+    if np.isfinite(values).all():
+        return result
+    return pd.DataFrame(
+        np.where(np.isfinite(values), values, np.nan), index=result.index, columns=result.columns
+    )
 
 
 def status_report() -> pd.DataFrame:

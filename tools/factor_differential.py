@@ -10,8 +10,12 @@
 语义归一化（§6.4 第一步，**默认全开**，每项都有实测依据）
 --------------------------------------------------------
 ============================ ==============================================
+``rank 归一化``              本库默认官方 ``zero_to_one``（``(名次−1)/(n−1) ∈ [0,1]``）；
+                             vnpy = ``one_over_n``（``名次/n``）⇒ 对拍时切到 ``one_over_n``
 ``rank 并列``                vnpy ``cs_rank`` = ``method="min"``（本库默认 average）
 ``decay_linear 方向``        vnpy 取「最老权重最大」（本库默认最新最大）
+``decay_linear 缺失``        本库默认官方**稀疏模式**（窗口内 NaN 当 0）；对拍时切 ``dense=True``
+                             （严格整窗）以避免与 vnpy 各异的 NaN 处理混在一起
 ``stddev ddof``              vnpy ``ts_std`` = ``ddof=0``（本库默认 1）
 ``adv{d} 口径``              vnpy 用 ``ts_mean(volume, d)``；本库 ``_adv(amount, d)``
                              ⇒ 对拍时把面板 ``amount`` 喂成 ``volume``
@@ -275,12 +279,15 @@ def apply_alignments(panel: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     from alpha101v.elemwise import signedpower  # noqa: PLC0415
 
     operators._floor_days = _round_days  # noqa: SLF001   （论文 floor vs vnpy round）
-    factors.rank = functools.partial(factors.rank, method="min")            # type: ignore[assignment]
+    factors.rank = functools.partial(factors.rank, method="min", normalization="one_over_n")  # type: ignore[assignment]
+    factors.ts_rank = functools.partial(factors.ts_rank, normalization="one_over_n")  # type: ignore[assignment]
     # 本库默认已按 BRAIN 定案（days_ago 基准 / power 语义），这里切回 vnpy 的口径再比
     factors.ts_argmax = functools.partial(factors.ts_argmax, basis="window_start")   # type: ignore[assignment]
     factors.ts_argmin = functools.partial(factors.ts_argmin, basis="window_start")   # type: ignore[assignment]
     factors._pow = lambda base, exponent: signedpower(base, exponent, preserve_sign=True)  # type: ignore[assignment]
-    factors.decay_linear = functools.partial(factors.decay_linear, order="oldest_first")  # type: ignore[assignment]
+    factors.decay_linear = functools.partial(
+        factors.decay_linear, order="oldest_first", dense=True
+    )  # type: ignore[assignment]
     factors.stddev = functools.partial(factors.stddev, ddof=0)              # type: ignore[assignment]
 
     aligned = dict(panel)

@@ -19,8 +19,8 @@
 已冻结的歧义点决策（详见 docs/operators.md §3）
 -----------------------------------------------
 ===== ==========================================================
-ddof  ``stddev``/``covariance`` 默认 ``ddof=1``（样本口径），仅接受 0/1
-pct   ``ts_rank`` 默认 ``pct=True`` → ``rankdata(window)[-1] / window`` ∈ (0, 1]
+ddof  ``stddev``/``covariance`` 默认 ``ddof=0``（BRAIN 官方算例口径，L-B 定案），0/1 可选
+rank  ``ts_rank``/``rank`` 默认 ``normalization="zero_to_one"`` → (名次−1)/(n−1) ∈ [0,1]（BRAIN 官方）
 argmax ``ts_argmax``/``ts_argmin`` 默认 ``basis="days_ago"``（BRAIN 官方口径：今天=0，L-B 定案）
 scale ``scale`` 沿 ``axis=1``（每日 ``Σ|x| = k``），``axis=0`` 是错的
 floor 非整数天数按论文取下整 ``floor(d)``（58–99 号因子大量使用）
@@ -70,6 +70,13 @@ ALLOWED_ARG_BASIS = ("days_ago", "window_start")
 
 #: 允许的 ``rank`` 并列处理策略。
 ALLOWED_RANK_METHODS = ("average", "min", "max", "first", "dense")
+
+#: rank 归一化区间（BRAIN 完整文档定案；见 docs/operators.md §3.2）
+#: * ``zero_to_one``（默认）= ``(名次−1)/(n−1)`` ∈ [0,1]：官方算例 ``(4,3,6,10,2) → (0.5,0.25,0.75,1,0)``、
+#:   ``ts_rank`` 「13 is the 4th of 5 (0-based 3) → 3/(5−1) = 0.75」；n=1 时分母为 0 ⇒ NaN；
+#: * ``one_over_n`` = ``名次/n`` ∈ (0,1]：**vnpy 的口径**，差分对拍时用它对齐；
+#: * ``ordinal`` = 序号 ``1..n``：参照实现的序号口径。
+ALLOWED_NORMALIZATIONS = ("zero_to_one", "one_over_n", "ordinal")
 
 #: 允许的 ``decay_linear`` 权重方向（★ 论文歧义点，见 docs/operators.md §3.7）：
 #: ``recent_first`` = 最新值权重最大（本库默认；设计文档 §8.1 + WMA 惯例）；
@@ -201,11 +208,13 @@ def sma(df: pd.DataFrame, window: int | float) -> pd.DataFrame:
     return df.rolling(window=window, min_periods=window).mean()
 
 
-def stddev(df: pd.DataFrame, window: int | float, ddof: int = 1) -> pd.DataFrame:
+def stddev(df: pd.DataFrame, window: int | float, ddof: int = 0) -> pd.DataFrame:
     """滚动标准差。
 
-    ★ 歧义点：``ddof`` 显式化，默认 **1**（样本口径，与 pandas/polars 默认一致）。
-    ``ddof=0`` 为总体口径；其余取值直接报错，避免静默的口径漂移。
+    ★ 歧义点 ``ddof`` —— **已由 BRAIN 官方文档（L-B）定案为默认 0**：官方 ``ts_std_dev`` 算例
+    明确「Average the squared deviations: (0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / **5** = 0.0002」
+    即**总体口径**（``docs/operators.md`` §3.1/§3.13.3）。``ddof=1``（样本口径）仍可选——
+    vnpy 的 ``ts_std`` 同为 0，但其 ``cs_std`` 用 1（自身不一致）；其余取值直接报错，避免静默漂移。
     """
     df, window = _prep_win(df, window)
     if ddof not in ALLOWED_DDOF:
@@ -225,10 +234,10 @@ def correlation(x: pd.DataFrame, y: pd.DataFrame, window: int | float) -> pd.Dat
     return _finite_or_nan(x.rolling(window=window, min_periods=window).corr(y))
 
 
-def covariance(x: pd.DataFrame, y: pd.DataFrame, window: int | float, ddof: int = 1) -> pd.DataFrame:
-    """滚动样本协方差。
+def covariance(x: pd.DataFrame, y: pd.DataFrame, window: int | float, ddof: int = 0) -> pd.DataFrame:
+    """滚动协方差。
 
-    ★ 歧义点：与 :func:`stddev` 共用 ``ddof`` 口径（默认 1）。
+    ★ 歧义点：与 :func:`stddev` 共用 ``ddof`` 口径，默认 **0**（BRAIN 官方总体口径，L-B 定案）。
     ddof=0 由样本协方差按 ``(n-1)/n`` 闭式换算，n = window（严格预热 ⇒ 窗口内无 NaN）。
     """
     x, window = _prep_win(x, window, "x")
@@ -242,28 +251,59 @@ def covariance(x: pd.DataFrame, y: pd.DataFrame, window: int | float, ddof: int 
     return cov * (window - 1) / window
 
 
-def rolling_rank(window_values: np.ndarray) -> float:
-    """单窗口辅助函数：返回窗口**末值**的序号 rank（1..n，并列取 average）。
+def _normalize_ranks(ranks, counts, normalization: str):
+    """把「已处理并列的名次」按请求的区间归一化（``ranks``/``counts`` 均为数值或 Series）。"""
+    if normalization not in ALLOWED_NORMALIZATIONS:
+        raise ValueError(f"normalization 只接受 {ALLOWED_NORMALIZATIONS}，收到 {normalization!r}")
+    if normalization == "ordinal":
+        return ranks
+    # BRAIN 官方 zero_to_one：最低 → 0.0、最高 → 1.0（n = 1 时分母为 0 ⇒ NaN，显式声明）
+    zero_to_one = normalization == "zero_to_one"
+    divisor = (counts - 1.0) if zero_to_one else counts
+    if isinstance(ranks, pd.DataFrame):
+        numerator = (ranks - 1.0) if zero_to_one else ranks
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return _finite_or_nan(numerator.div(divisor, axis=0))
+    if not divisor:
+        return float("nan")
+    value = (float(ranks) - 1.0 if zero_to_one else float(ranks)) / float(divisor)
+    return value if np.isfinite(value) else float("nan")
 
-    这是 :func:`ts_rank` 的构件，也是设计文档 §8.1 明确要求逐窗口对拍的对象：
-    ``scipy.stats.rankdata(w)[-1]``。
+
+def _ordinal_rank(window_values: np.ndarray) -> float:
+    """单窗口辅助函数：窗口**末值**的序号名次（1..n，并列取 average），不归一化。
+
+    供 :func:`ts_rank` 作为 rolling 内核使用（归一化在算子层只做一次，避免二次归一化）。
     """
     values = np.asarray(window_values, dtype=float)
-    return float(rankdata(values)[-1])
+    if values.size == 0 or not np.isfinite(values).all():
+        return float("nan")
+    return float(np.asarray(rankdata(values))[-1])
 
 
-def ts_rank(df: pd.DataFrame, window: int | float, pct: bool = True) -> pd.DataFrame:
-    """滚动时序 rank。
+def rolling_rank(window_values: np.ndarray, normalization: str = "zero_to_one") -> float:
+    """单窗口辅助函数：返回窗口**末值**的名次（并列取 average），按 ``normalization`` 归一化。
 
-    ★ 歧义点：``pct`` 显式化，默认 **True** → ``rankdata(window 末值) / window`` ∈ (0, 1]，
-    与截面 :func:`rank` 同量纲（原始实现返回序号 1..n，与截面 pct 混用量纲，见
-    设计文档 §3.3 缺陷 6）。``pct=False`` 返回序号 1..n，可用于对齐序号口径的参照实现。
+    这是 :func:`ts_rank` 的构件，也是设计文档 §8.1 明确要求逐窗口对拍的对象：
+    ``scipy.stats.rankdata(w)[-1]``。默认区间 ``zero_to_one`` = 官方 ``(名次−1)/(n−1) ∈ [0,1]``。
+    """
+    values = np.asarray(window_values, dtype=float)
+    result = _normalize_ranks(_ordinal_rank(values), float(values.size), normalization)
+    return float(result)
+
+
+def ts_rank(df: pd.DataFrame, window: int | float, normalization: str = "zero_to_one") -> pd.DataFrame:
+    """滚动时序 rank（窗口**末值**在窗口内的名次）。
+
+    ★ 歧义点 ``normalization`` —— **已由 BRAIN 官方文档（L-B）定案为默认 `zero_to_one`**：
+    官方 ``ts_rank`` 算例「Suppose [10, 12, 11, 15, 13] … 13 is the 4th value out of 5 (0-based
+    index 3) ⇒ **Normalized rank: 3 / (5 − 1) = 0.75**」⇒ ``(名次−1)/(n−1) ∈ [0,1]``。
+    ``one_over_n``（``名次/n`` ∈ (0,1]，vnpy 口径，差分对拍用）与 ``ordinal``（序号 1..n）仍可选；
+    严格预热（``min_periods=window``）不变 ⇒ 窗口内无 NaN。
     """
     df, window = _prep_win(df, window)
-    ordinal = df.rolling(window=window, min_periods=window).apply(rolling_rank, raw=True)
-    if pct:
-        return ordinal / float(window)
-    return ordinal
+    ordinal = df.rolling(window=window, min_periods=window).apply(_ordinal_rank, raw=True)
+    return _normalize_ranks(ordinal, float(window), normalization)
 
 
 def product(df: pd.DataFrame, window: int | float) -> pd.DataFrame:
@@ -299,10 +339,18 @@ def delay(df: pd.DataFrame, period: int | float = 1) -> pd.DataFrame:
 
 
 def decay_linear(
-    df: pd.DataFrame, period: int | float, *, order: str = "recent_first"
+    df: pd.DataFrame, period: int | float, *, order: str = "recent_first", dense: bool = False
 ) -> pd.DataFrame:
     """线性衰减加权平均，权重归一（和为 1）。
 
+    ★ 缺失值策略 ``dense`` —— **BRAIN 官方默认是稀疏（``dense=False``）**：官方原文
+    「By default, it operates in **sparse mode** (``dense = false``), **treating missing (NaN)
+    values as zero**」，且分母恒为 ``1+…+d``（官方算例 ``(6*1+8*2+10*3)/(1+2+3)``）。
+    本库因此把默认值定为 **``dense=False``（稀疏）**，与官方一致；``dense=True`` 为**严格**口径
+    （窗口内任一 NaN ⇒ 结果 NaN），供「绝不填 NaN」的调用方与差分对拍使用。
+
+    ⚠️ 与设计文档 §3.3「不 fillna(0)」契约的关系：该契约禁止在**数据管道层**把缺失伪装成观测；
+    这里是把官方**算子语义**（窗口内 NaN 计 0，分母仍为完整权重和）按其定义实现，且可一键切回严格口径。
     ★ 歧义点 ``order``（论文只写权重列表 ``d, d–1, …, 1``，**未写枚举方向**）：
 
     * ``"recent_first"``（**默认**）：最新值权重最大，权重 ``1..d`` ⇒ 权重随**年龄**衰减，
@@ -321,7 +369,9 @@ def decay_linear(
     else:
         weights = np.arange(period, 0, -1, dtype=float)
     weights /= weights.sum()
-    return df.rolling(window=period, min_periods=period).apply(
+    # 稀疏模式（BRAIN 默认）：窗口内 NaN 计 0；严格模式：整窗必须有效
+    window_values = df if dense else df.fillna(0.0)
+    return window_values.rolling(window=period, min_periods=period).apply(
         lambda w: float(np.dot(w, weights)), raw=True
     )
 
@@ -381,18 +431,23 @@ def ts_argmin(df: pd.DataFrame, window: int | float, basis: str = "days_ago") ->
 # ---------------------------------------------------------------------------
 
 
-def rank(df: pd.DataFrame, pct: bool = True, method: str = "average") -> pd.DataFrame:
+def rank(df: pd.DataFrame, normalization: str = "zero_to_one", method: str = "average") -> pd.DataFrame:
     """每日截面 rank。
 
-    ★ 歧义点：``pct`` 显式化，默认 **True** → ``scipy.stats.rankdata(row,'average')/n``，
-    值域 ⊆ (0, 1]，与设计文档 §8.2 逐点一致。
+    ★ 歧义点 ``normalization`` —— **已由 BRAIN 官方文档（L-B）定案为默认 `zero_to_one`**：
+    官方 ``rank`` 原文「mapping the **lowest value to 0.0** and the **highest to 1.0**」，
+    算例 ``x = (4, 3, 6, 10, 2) → (0.5, 0.25, 0.75, 1, 0)`` ⇒ ``(名次−1)/(n−1) ∈ [0,1]``。
+    ``one_over_n`` = ``名次/n`` ∈ (0,1]（vnpy 口径，差分对拍用）；``ordinal`` = 序号 1..n。
+    n = 1（当日只有一个有效标的）时 ``zero_to_one`` 分母为 0 ⇒ **NaN**（显式声明）。
     ★ 歧义点：并列策略 ``method`` 显式化，默认 **"average"**（pandas/scipy 默认）。
     NaN 不参与排序且保持 NaN（``na_option="keep"``）。
     """
     df = _prep(df)
     if method not in ALLOWED_RANK_METHODS:
         raise ValueError(f"method 只接受 {ALLOWED_RANK_METHODS}，收到 {method!r}")
-    return df.rank(axis=1, method=method, pct=pct, na_option="keep")
+    counts = df.notna().sum(axis=1).astype(float)
+    ordinal = df.rank(axis=1, method=method, pct=False, na_option="keep")
+    return _normalize_ranks(ordinal, counts, normalization)
 
 
 def scale(df: pd.DataFrame, k: float = 1.0) -> pd.DataFrame:

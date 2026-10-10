@@ -112,43 +112,50 @@
 
 | # | 歧义点 | **本库决策** | 显式化方式 | 锁定测试 |
 |---|---|---|---|---|
-| 3.1 | `stddev`/`covariance` 的 ddof | **默认 1**（样本口径），只接受 0/1 | 参数 `ddof` | `test_a03` `test_a04` `test_a05` `test_a22` `test_a23` |
-| 3.2 | `ts_rank` 是否归一化；`rank` 是否 pct | `ts_rank` **默认 `pct=True`**（`名次/window` ∈ (0,1]）；`rank` **默认 `pct=True`**（`名次/n` ∈ (0,1]） | 参数 `pct` | `test_a10` `test_a11` `test_b01` `test_b03` |
+| 3.1 | `stddev`/`covariance` 的 ddof | ✅ **L-B 定案：默认 0**（总体口径，官方 `ts_std_dev` 算例除以 n），`ddof=1` 可选 | 参数 `ddof` | `test_a03` `test_a04` `test_a05` `test_a22` `test_a23` |
+| 3.2 | `ts_rank`/`rank` 的归一化区间 | ✅ **L-B 定案：默认 `zero_to_one`** = `(名次−1)/(n−1)` ∈ **[0,1]**（官方算例 `(4,3,6,10,2)→(0.5,0.25,0.75,1,0)`、`ts_rank` `3/(5−1)=0.75`）；`one_over_n`（`名次/n`，vnpy 口径）与 `ordinal`（序号）可选 | 参数 `normalization` | `test_a10` `test_a11` `test_b01` `test_b03` |
 | 3.3 | `ts_argmax`/`ts_argmin` 基准与方向 | ✅ **L-B 定案**：**默认 `days_ago`**（BRAIN 口径：今天=0 ∈ [0, window-1]）；`basis="window_start"`（自窗口起点 1-based）保留为 vnpy 对齐选项 | 参数 `basis` | `test_a12`–`test_a16` |
 | 3.4 | `scale` 轴向 | **`axis=1`**（每日 `Σ\|x\| = k`） | 无参数（口径固定），断言逐日 `Σ\|x\| = k` | `test_b05`–`test_b07` |
 | 3.5 | `correlation` 遇常数序列 | **NaN**（不是 0、不是 ±inf） | 无参数（口径固定） | `test_a20` |
 | 3.6 | `rank` 并列策略 | **`method="average"`**（pandas/scipy 默认） | 参数 `method` | `test_b02` `test_a24` |
 
-### 3.1 ddof：默认 `1`（样本口径）
+### 3.1 ddof：默认 `0`（总体口径，L-B 定案）
 
-* **决策**：`stddev(df, window, ddof=1)`、`covariance(x, y, window, ddof=1)`；`ddof` 只放行 `0` 与 `1`，其他值显式报错。
-* **理由**：
-  1. pandas `rolling().std()`/`.cov()` 的默认就是 `ddof=1`，本库直接的实现基础与对拍对象都是 pandas；
-  2. 差分对拍参照 vnpy 走 polars，polars 的 `std`/`cov` 默认亦为 `ddof=1` → **默认口径天然与参照一致，M4 少一类差异**；
-  3. 金融收益序列本就以「样本」视角估计波动率（只有一段历史，不是全集）；
-  4. 只放行 0/1：这两个是唯一有明确统计含义的口径，禁止 `ddof=2` 之类的静默漂移。
-* **被否决**：`ddof=0`。numpy 默认是 0，若跟随 numpy，则与 pandas 对拍、与 vnpy 对拍都要额外换算；
-  `covariance` 的闭式换算 `(n-1)/n` 也只在 0/1 之间有明确形式。
-* **`covariance` 的 ddof=0 实现**：`cov_sample × (window-1)/window`，因为严格预热 ⇒ 窗口内有效样本数恒为 `window`。
-* **vnpy 差分实测（2026-10-09）**：vnpy 的 ``ts_std`` 用 **``ddof=0``**（源码里 `np.nanstd(..., ddof=0)`），
-  **且它自己不一致**——``cs_std``（截面）走 polars `.std()` 默认 ``ddof=1``。
-  本库默认维持 ``ddof=1``（pandas/polars 默认 + 设计文档 §7.3 签名），
-  对齐方式：``stddev(..., ddof=0)`` / ``covariance(..., ddof=0)``（实测逐点一致，见 §6 D2）。
+* **决策（2026-10-10 由 BRAIN 官方文档定案）**：`stddev(df, window, ddof=0)`、`covariance(x, y, window, ddof=0)`；
+  `ddof=1`（样本口径）仍可选，其他值显式报错。
+* **一手依据（L-B，官方算例）**：``ts_std_dev`` 文档的算例把平方偏差之和除以 **5**（不是 5−1）：
+  > Compute the mean: (0.01 + 0.02 + −0.01 + 0.00 + 0.03) / 5 = 0.01 …
+  > **Average the squared deviations: (0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / 5 = 0.0002**
+  > Take the square root: sqrt(0.0002) ≈ 0.0141
 
-### 3.2 pct：`ts_rank` 与 `rank` 都默认 `True`
+  ⇒ 官方是**总体标准差**（`ddof=0`）。本库原先默认 `ddof=1`（当时以 pandas/polars 默认 + 「与 vnpy 对齐」为由），
+  现已按官方口径翻转，并在 `test_a03` 用官方算例钉死（`sqrt(2/3)`）。
+* **M3 时被否决、现被推翻的理由记录**：当时认为「金融收益是样本视角」且「pandas/polars 默认 1」；
+  但本项目的第一判据是**平台规范（L-B）**，统计哲学不能凌驾于规范之上。
+* **`covariance` 的 ddof=1 实现**：`cov_pop × window/(window-1)`（严格预热 ⇒ 窗口内有效样本数恒为 `window`）。
+* **对拍影响**：vnpy 的 ``ts_std`` 本来就用 ``ddof=0`` ⇒ 本库默认现在与它**逐点一致**，
+  `tools/differential.py` 里原先记录的差异项 **D2（ddof）已消失**（该工具现以「对齐」项断言它）。
+  注意 vnpy 自身不一致：``cs_std``（截面）走 polars 默认 ``ddof=1``。
 
-* **决策**：
-  * `ts_rank(df, window, pct=True)` → 窗口末值的名次 `rankdata(w)[-1]` 除以 `window`，值域 **(0, 1]**；
-    `pct=False` → 序号 `1..window`。
-  * `rank(df, pct=True, method="average")` → `rankdata(row, method)/n`，值域 **(0, 1]**；`pct=False` → 序号 `1..n`。
-* **理由**：
-  1. 设计文档 §7.3 的签名默认就是 `pct=True`，§8.2 第一行样例 `[0.25, 0.5, 0.75, 1.0]` 也正是 `名次/n`；
-  2. **量纲一致**：原始实现 `ts_rank` 返回窗口内末值**序号**（1..n），而 `rank` 返回**截面 pct**，
-     两者相乘相除会得到量纲混乱的结果（设计文档 §3.3 缺陷 6 明确指出）；
-  3. `pct=False` 保留序号口径，M4 差分对拍时若要贴合序号语义的实现，**改参数即可，不必改库**。
-* **注意（对拍归一化点）**：pct 归一化分母是 `window`（不是 `window-1`），即最小值得 `1/window` 而非 `0`。
-  这与「与 `rankdata/n` 逐点相等」一致；若参照实现用 `(rank-1)/(n-1)`（值域 [0,1]）或 ordinal，需要在差分层做归一化
-  （见 §6 清单）。
+### 3.2 归一化区间：默认 `zero_to_one` = `(名次−1)/(n−1)` ∈ [0,1]（L-B 定案）
+
+* **决策（2026-10-10 由 BRAIN 完整文档定案）**：
+  * `ts_rank(df, window, normalization="zero_to_one")` → 窗口**末值**的平均名次 `k` ⇒ `(k−1)/(window−1)` ∈ **[0,1]**；
+  * `rank(df, normalization="zero_to_one", method="average")` → 当日截面平均名次 `k` ⇒ `(k−1)/(n−1)` ∈ **[0,1]**；
+  * 另两档可选：`one_over_n` = `名次/n` ∈ (0,1]（**vnpy 口径**，差分对拍用它对齐）、`ordinal` = 序号 `1..n`。
+* **一手依据（L-B，官方算例）**：
+  > `rank`：「assigns a rank to each value … **mapping the lowest value to 0.0 and the highest to 1.0**」
+  > 例：`x = (4, 3, 6, 10, 2)` ⇒ `rank(x) = (0.5, 0.25, 0.75, 1, 0)`
+  > `ts_rank`：「13 is the 4th value out of 5 (0-based index: 3) ⇒ **Normalized rank: 3 / (5 − 1) = 0.75**」
+
+  两例都指向 `(名次−1)/(n−1)`；本库原先的 `名次/n`（值域 (0,1]，依 vnpy 的 `/count()`）**被官方口径取代**。
+* **边界（显式声明）**：`n = 1`（当日只有一个有效标的）时 `(名次−1)/(n−1)` 分母为 0 ⇒ **NaN**（不伪装成 0 或 1）；
+  `one_over_n` 在该情形给 1.0，`ordinal` 给 1。
+* **影响面**：`rank` 在 101 个因子里出现 167 处、`ts_rank` 62 处 ⇒ **全部 101 个因子的取值都受影响**
+  （L2 结构对照与 L4 不变量不受影响；因子级差分在按 `one_over_n` 对齐后仍为 0 待查，见 `docs/verification.md` §1.5）。
+* **对拍影响**：新增两条已归因差异 **D7（`rank`）/D7b（`ts_rank`）**：本库默认 vs vnpy 的 `one_over_n`。
+* **历史记录**：本库在 M1/M2 曾明确写下「若参照实现用 `(rank-1)/(n-1)` 或 ordinal，需要在差分层做归一化」——
+  现在官方文档裁定 `(rank-1)/(n-1)` 才是主口径，因此不是「差分层归一化」，而是**本库默认口径的更正**。
 * **vnpy 差分实测（2026-10-09）**：
   * ``cs_rank`` 源码自述 *"WorldQuant cross-sectional rank (method=min, pct=True)"* →
     与「无并列时」的本库默认 **逐点一致**（实测），**并列时**它用 `min`、本库用 `average`（§3.6）；
@@ -311,6 +318,7 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | 三元 `cond ? a : b`，cond 为 NaN | 结果 NaN | 同上 | 16 处 |
 | 逐元素 `min/max`，一侧 NaN | **返回另一侧**（`np.fmin/fmax`），两侧皆 NaN ⇒ NaN | 论文未定义；若取 NaN 传播，alpha96 这类 `max(分支A, 分支B)` 会在某分支系统性 NaN 时**整片退化**（实测教训） | 9 个因子 |
 | `log(x)`，x ≤ 0 | NaN（不是 −inf） | §3.9 的 elemwise 层决策 | alpha2/29/81 |
+| **`decay_linear` 窗口内 NaN** | **计 0（稀疏，官方默认 `dense=False`）**；`dense=True` 恢复严格（整窗有效否则 NaN） | BRAIN 原文「By default, it operates in **sparse mode** (`dense = false`), treating missing (NaN) values as zero」，分母恒为 `1+…+d` | 22 个 decay 因子 |
 
 ### 3.13 WorldQuant BRAIN 官方算子文档（L-B）入库与三处定案
 
@@ -345,17 +353,17 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | `ts_rank` 逐股时序口径 | *"`ts_rank(x, d, constant = 0)` Ranks the value of a variable **for each instrument** over a specified number of past days, returning the rank of the current value"* | ✅ 与本库 `ts_rank` 一致（归一化区间官方未写明，本库取 ∈ (0,1]，见 A2） |
 | §3.9 `adv{d}` | 文档中**无** `adv` 算子（它是数据字段而非算子） | 论文的 `adv{d}` = 美元成交额 ⇒ 本库取 `amount` 的依据仍在 L-A + §3.9 |
 
-#### 3.13.3 完整文档（API 级）新揭示的 3 处默认口径差异（**已定案、待落地**）
+#### 3.13.3 完整文档（API 级）揭示的 3 处默认口径差异（✅ **已落地**，2026-10-10）
 
 打印件只给了首行描述；随后用会话凭据抓取了**完整文档**（`GET /operators/{name}`，66 个算子中 65 个可取，
 本地语料 `refs/brain_operator_docs.md`，gitignored）。完整正文里的**官方算例**又定案了三处
 **与本库/参照都不同**的口径 —— 三者都会**改变因子取值**，故单独作为下一里程碑落地：
 
-| 议题 | BRAIN 完整文档原文/算例 | 本库现状 | 影响面 |
+| 议题 | BRAIN 完整文档原文/算例 | 本库处置 | 影响面 |
 |---|---|---|---|
-| `rank`/`ts_rank` 归一化 | `rank`：「mapping the **lowest value to 0.0** and the **highest to 1.0**」，算例 `(4,3,6,10,2) → (0.5, 0.25, 0.75, 1, 0)`；`ts_rank`：「13 is the 4th of 5 (0-based 3); **Normalized rank: 3 / (5 − 1) = 0.75**」⇒ **[0,1] 闭区间 `(名次−1)/(n−1)`** | `pct=True` ⇒ `名次/n ∈ (0,1]`（依 vnpy 的 `/count()`） | **全部 101 个因子** |
-| `ts_std_dev` 的 ddof | 算例：`(0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / **5** = 0.0002` ⇒ **ddof=0（总体）** | 默认 `ddof=1`（A1） | 8 个因子 + `covariance` |
-| `ts_decay_linear` 缺失值 | 「By default, it operates in **sparse mode** (`dense = false`), **treating missing (NaN) values as zero**」 | 严格整窗有效，否则 NaN（§3.12） | 22 个 decay 因子 |
+| `rank`/`ts_rank` 归一化 | 算例 `(4,3,6,10,2) → (0.5, 0.25, 0.75, 1, 0)`；「Normalized rank: 3 / (5 − 1) = **0.75**」⇒ **[0,1] 闭区间 `(名次−1)/(n−1)`** | ✅ **默认改为 `zero_to_one`**（§3.2 已改写；`one_over_n`/`ordinal` 保留），`test_b01`/`test_a10` 用官方算例钉死 | **全部 101 个因子** |
+| `ts_std_dev` 的 ddof | 算例：`(0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / **5** = 0.0002` ⇒ **ddof=0（总体）** | ✅ **默认改为 0**（§3.1 已改写），`test_a03`/`test_a22` 钉死；vnpy 的 D2 差异随之消失 | 8 个因子 + `covariance` |
+| `ts_decay_linear` 缺失值 | 「By default, it operates in **sparse mode** (`dense = false`), **treating missing (NaN) values as zero**」（分母仍 `1+…+d`） | ✅ **默认改为稀疏**（`dense=False`），`dense=True` 保留严格口径；§3.12 记录与「不 fillna」契约的关系 | 22 个 decay 因子 |
 
 同时确认（无需改动）：`rank` 的 `rate=2` 只是**排序精度**开关（"set to 0 for exact sorting"）；
 `ts_corr` 是标准 Pearson 且「first element is the latest」；`if_else(cond, a, b)` 与本库 `_if` 同义。
@@ -517,12 +525,15 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | `decay_linear` | **必须显式** `order="oldest_first"` | ≤ 7e-15 |
 | `rank` | 无并列：默认即一致；有并列：`method="min"` | 精确 0 |
 
-### 6.2 已归因的口径差异（6 条，全部实测存在）
+### 6.2 已归因的口径差异（8 条，全部实测存在；原 D2 已因官方口径落地而消失）
 
 | # | 项 | vnpy（L-D） | 本库（默认） | 影响面 | 归因与处置 |
 |---|---|---|---|---|---|
 | D1 | `decay_linear` 权重方向 | 最老权重最大（权重表套在时间正序窗口） | 最新权重最大 | **22 个因子** | 论文枚举方向未写死（§3.7）；本库用 `order` 参数对齐，**默认不动**，相关因子不得 `verified` |
-| D2 | `ts_std` 的 ddof | `0`（且 `cs_std` 用 polars 默认 `1`，**自身不一致**） | `1` | 8 个因子 | pandas/polars 默认 + 设计文档签名；用 `ddof=0` 对齐 |
+| ~~D2~~ | ~~`ts_std` 的 ddof~~ | — | — | — | ✅ **已消失**（2026-10-10）：本库默认改为 `ddof=0`（BRAIN 官方算例，§3.1）⇒ 与 vnpy 逐点一致，该差异不复存在 |
+| D7 | `rank` 的归一化区间 | `名次/n ∈ (0,1]`（`one_over_n`） | `(名次−1)/(n−1) ∈ [0,1]`（**官方** `zero_to_one`） | **全部 101 个因子** | BRAIN 完整文档算例（§3.2）；对拍时切 `normalization="one_over_n"` 对齐 |
+| D7b | `ts_rank` 的归一化区间 | 同 D7 | 同 D7 | 62 处调用 | 同上（官方算例 `3/(5−1)=0.75`） |
+| D8 | `decay_linear` 的缺失值 | 另有其 NaN 处理 | **稀疏：窗口内 NaN 计 0**（官方默认 `dense=False`） | 22 个 decay 因子 | BRAIN 完整文档（§3.12）；对拍时切 `dense=True` 避免与 vnpy 各异的 NaN 处理混淆 |
 | D3 | 预热期 | 各算子不统一（`ts_sum` 严格；`ts_min/max/mean/std/corr` 用 `min_samples=1` 填值） | 统一严格 NaN（§2.3） | 全部时序算子 | 本库要「NaN 只代表信息不足」；实测预热期外逐点一致 |
 | D4 | `rank` 并列策略 | `method="min"` | `method="average"` | 并列行 | 仅并列时不同（实测无并列逐点一致）；`method` 可切 |
 | D5 | `scale` 零和行 | `0` | `NaN` | 罕见（全 0/全 NaN 日） | 本库拒绝把「无数据」伪装成 0（§3.3 缺陷 7 的同类问题） |
@@ -547,7 +558,7 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | # | 事项 | 状态 | 影响面 |
 |---|---|---|---|
 | 1 | **BRAIN 官方算子文档（L-B）** | ✅ **已获取**（2026-10-10，`refs/WorldQuant_BRAIN.pdf`，sha256 `8a20029d…`）：三处歧义全部定案 —— `ts_arg_max/min` 基准（§3.3）、`ts_decay_linear` 权重方向（§3.13）、中缀 `^` 的 `power`/`signed_power` 之分（§3.11）；`scale` 轴向、`ts_rank`/`rank`、`group_neutralize`、`sign`/`log`、`add/multiply/subtract` 的 `filter` 语义也获原文确认（§3.13） | 27 个因子的 ambiguous 标签清零 |
-| 1b | BRAIN **完整文档（API 级）**已入库（`refs/brain_operator_docs.md`，65 个算子正文 + 算例）：`rank`/`ts_rank` 归一化 = `(名次−1)/(n−1) ∈ [0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 默认稀疏（NaN→0） | ✅ 已定案（§3.13.3）；⏳ **待落地**（三处都改变因子取值） | **101 个因子**（归一化）+ 8（ddof）+ 22（decay） |
+| 1b | BRAIN **完整文档（API 级）**已入库（`refs/brain_operator_docs.md`，65 个算子正文 + 算例） | ✅ **已定案并落地**（§3.2 归一化 `zero_to_one`、§3.1 ddof=0、§3.12 稀疏 decay）；官方算例全部逐字复核 | **101 个因子**（归一化）+ 8（ddof）+ 22（decay） |
 | 1c | 完整文档**也未给出**：`dense=true` 分支、`min/max` 的 NaN 口径、滚动算子 `min_periods`、`if_else` 条件为 NULL 的分支 | 未定（文档确实没写） | 本库显式决策（§3.12） |
 | 2 | 与 vnpy `{cs,ts}_function.py` 的逐项口径核对（§5.3、§6.4） | ✅ **算子层已完成**（2026-10-09：`tools/differential.py`，24 项，见 §6）；`ta_*` 与因子级差分待 M4（§6.3 L3） | 82 个因子（M4） |
 | 3 | **非整数窗口 `floor(d)` 改码**（§3.8，论文 L-A 已明确） | 已判定、**未改码**（M1 冻结件；需同步改 `§4.4` + `test_a27`） | **40 个因子** |
@@ -562,7 +573,8 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：20 算子口径、六个歧义点决策、边界策略、设计文档勘误 4 条、M4 归一化清单 |
-| **v0.6** | 2026-10-10 | 追加 §3.13.3/§3.13.4：API 级**完整文档**（含官方算例）又定案三处默认口径差异（`rank`/`ts_rank` 归一化 `[0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 稀疏 NaN→0），均**待落地**；§7 待办按影响面重排 |
+| **v0.7** | 2026-10-10 | **三处 BRAIN 官方口径落地**：§3.2 归一化改为 `zero_to_one`（`(名次−1)/(n−1) ∈ [0,1]`，官方算例钉死）、§3.1 ddof 改为 0（官方算例除以 n）、§3.12 新增 `decay_linear` 稀疏模式（官方默认 `dense=False`，NaN 计 0）；§3.13.3 标记为已落地；差分新增 D7/D7b/D8、D2 消失 |
+| v0.6 | 2026-10-10 | 追加 §3.13.3/§3.13.4：API 级**完整文档**（含官方算例）又定案三处默认口径差异（`rank`/`ts_rank` 归一化 `[0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 稀疏 NaN→0），均**待落地**；§7 待办按影响面重排 |
 | v0.5 | 2026-10-10 | **BRAIN 官方算子文档（L-B）入库**：新增 §3.13（原文引文 + 三处定案 + 与本库既有决策的相互印证 + 文档未展开项）；§3.3 默认基准翻转为 `days_ago`（BRAIN：今天最大返回 0）、§3.11 中缀 `^` 定案为 `power`（新增 `elemwise.power`，alpha48 负收益平方得正）、§3.13.1 确认 `ts_decay_linear` 近期权重大（本库默认）；§7 待办项 1/5 结案（27 个因子的 `ambiguous` 清零） |
 | v0.4 | 2026-10-09 | M3 新增：§3.9 `adv{d}` 取 `amount`（影响 45 因子）、§3.10 `min/max` 两种语义的消歧规则、§3.11 中缀 `^` 取保号幂（alpha48/90 因此标 ambiguous）、§3.12 **缺失值语义总表**（比较/逻辑/三元/逐元素 min-max/log）；并追加一条由全量因子跑暴露并修掉的算子边界：`correlation`/`covariance` 在近乎零方差窗口中的 ±inf 一律掩为 NaN |
 | v0.3 | 2026-10-09 | 加入 **vnpy 差分实测**：§3.1（vnpy `ts_std` 用 ddof=0 且与自身 `cs_std` 不一致）、§3.2（`cs_rank`=min+pct；`ts_rank` 与 `percentileofscore` 数学等价、实测逐点一致）、§3.3（vnpy `arg_max()+1` ⇒ 本库 1-based 默认获第二实现支持）、§3.4（`cs_scale` 同为每日截面）、§3.6（文档那组并列数字其实与参照 min 口径吻合）、**§3.7（vnpy 的 `decay_linear` 权重方向与本库默认相反 ⇒ 22 个因子的最高风险项，新增 `order` 参数对齐）**；§6 换成实测归一化清单（18 项一致 + 6 项归因 + 3 项参照能力边界）；§7 更新 1/2 项 |

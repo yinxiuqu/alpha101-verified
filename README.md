@@ -93,6 +93,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 未用将被删除的 pandas API（原实现死于 `as_matrix`） | `test_no_deprecated_pandas_api_warnings`（22 个调用点在 `FutureWarning`/`DeprecationWarning` 转异常下运行，0 警告） |
 | 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：24 项中 18 项对齐后逐点一致（含 argmax 基准、ts_rank 口径、decay 方向对齐后） |
 | **101 个因子与论文公式结构一致** | `tools/conformance_report.py`：算子／字段／字面量三重对照 ⇒ **101/101 等价、0 偏离** |
+| **官方口径落地（L-B 算例）** | `rank`/`ts_rank` 归一化 `(名次−1)/(n−1) ∈ [0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 稀疏 NaN→0 —— 四个官方算例已逐字进测试（`docs/operators.md` §3.1/§3.2/§3.12/§3.13.3） |
 | **BRAIN 完整算子文档（L-B，API 级）** | 66 个算子的**完整正文 + 官方算例**（本地语料 `refs/brain_operator_docs.md`，gitignored）：据此又定案 3 处默认口径差异（归一化 `[0,1]`、`ts_std_dev` ddof=0、decay 稀疏 NaN→0），**待落地**（`docs/operators.md` §3.13.3） |
 | **BRAIN 官方算子文档（L-B）定案** | `refs/WorldQuant_BRAIN.pdf`（登录墙内文档，gitignored）：`ts_decay_linear` 方向、`ts_arg_max/min` 基准（今天=0）、`^` 的 `power`/`signed_power` 之分 —— 原文引文见 `docs/operators.md` §3.13 |
 | **因子级与 vnpy 逐点一致** | `tools/factor_differential.py`：82 个可比因子 0 个「待查」（64 逐点一致 + 18 已归因：2 参照 bug、14 离散平局/数值病态、2 覆盖差异）；19 个因子无第三方参照 |

@@ -25,7 +25,7 @@
 | 2 | `alpha1` 内 `x = close; x[returns<0] = ...` 原地污染入参 | 全部算子**纯函数**，绝不写入入参 | 设计文档 §6.5「输入不可变性」 | `test_inputs_are_not_modified`（22 个调用点）；变异 `m6` |
 | 3 | `scale` 用 `df.div(df.abs().sum())` → 按**列**求和（轴向错） | `axis=1`，每日 `Σ\|x\| = k` | L-A 论文定义（每日截面） | `test_b05`–`test_b07`；变异 `m1` |
 | 4 | `IndNeutralize` 逐日 `la.inv`，遇空行业/奇异矩阵 → `LinAlgError` | `ind_neutralize` 向量化分组（`bincount`，无求逆）；`neutral` 用 `lstsq`(SVD) | L-C；与 `statsmodels.OLS` 对拍 `rtol=1e-10` | `test_c02`、`test_c03`、`test_c10`、`test_c12` |
-| 5 | `ts_rank` 返回窗口末值**序号**，与截面 `rank` 的 pct 量纲混用 | `ts_rank` 默认 `pct=True`（名次/window），与 `rank` 同量纲 | 设计文档 §3.3 缺陷 6 | `test_a10`、`test_a11`；变异 `m2`（`rank` 侧） |
+| 5 | `ts_rank` 返回窗口末值**序号**，与截面 `rank` 的量纲混用 | `ts_rank` 与 `rank` 统一走同一套 `normalization`（2026-10-10 起默认为**官方** `zero_to_one`），量纲一致 | 设计文档 §3.3 缺陷 6 | `test_a10`、`test_a11`；变异 `m2`（`rank` 侧） |
 | 6 | 101 个因子几乎全部 `.fillna(0)` 收尾，缺失与真值 0 不可区分 | NaN 传播；需填充时必须显式（如 `returns_from_close(fill_first=True)`） | 设计文档 §3.3 缺陷 7 | `test_a25`、`test_a26`、`test_panel.py::test_returns_from_close_leaves_first_row_nan_by_default` |
 | 7 | 零测试、零基准值 | 219 个测试 + 7 个变异注入 + 权威实现逐点对拍 | §6.2/§8.4 | 全量 `pytest` |
 
@@ -46,7 +46,7 @@
 | P5 | `decay_linear` 权重 `d, d–1, …, 1`（**枚举方向未写死**） | 取「末值权重最大」（权重 `1..d` 归一） | ⚠️**论文歧义**（非偏离） | **22 个因子** | M4 专项核对 vnpy `ts_decay_linear` 方向；差分脚本预留开关 |
 | P6 | `ts_argmax`/`ts_argmin` = "which day … occurred on"（**基准与方向未定义**） | 默认自窗口起点 1-based（可切 `days_ago`） | ⚠️**论文歧义**（非偏离）；两读法为**序反转**，Alpha#1 会变号 | **6 个因子** | 待 L-B（BRAIN 文档，需登录）或 vnpy 差分定案 |
 | P7 | `scale(x, a)`：`sum(abs(x)) = a`（**轴向未写**） | `axis=1`（每日截面） | ⚠️**论文歧义**（非偏离） | 6 个因子 / 9 处调用 | 待 L-B 复核（BRAIN `scale` 带 booksize 语义） |
-| P8 | `rank`/`ts_rank` 是否 pct、`stddev`/`covariance` 的 ddof、零方差相关系数行为 | 均已显式决策（pct=True / ddof=1 / NaN） | ✅**论文未规定**，属 L-C 决策，不算偏差 | — | 已记于 `operators.md` §3；M4 差分时按 §6 清单归一化 |
+| P8 | `rank`/`ts_rank` 的归一化区间、`stddev`/`covariance` 的 ddof、零方差相关系数行为 | 论文均未规定；**已由 BRAIN 官方文档定案并落地**（`zero_to_one` / `ddof=0` / NaN） | ✅ 不是偏差：论文未写，我们采用了平台规范（L-B） | — | 已记于 `operators.md` §3.1/§3.2/§3.12；差分时按 §6 清单归一化 |
 
 **结论**：论文级核对后，算子层的差距只剩 **P1 一处需要改码**（且规则明确、无歧义）；
 P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必须靠 L-B 或差分定案，**不得靠猜**。
@@ -82,7 +82,7 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 | V3 | vnpy 覆盖 **82/101**：缺 `alpha56`（无 `cap`）+ 18 个 `IndNeutralize` 因子 | 覆盖度缺口 | 这 19 个**无法差分**，只能靠 L2+L4（本库已交付 alpha56 试点） |
 | V4 | 那 18 个因子在 vnpy 测试里被**静默摘掉中性化**（表达式里 `IndNeutralize` 消失，断言仍通过） | 「有测试 ≠ 有验证」的教科书案例 | 因子级对拍必须按**含中性化的原式**比对，否则对拍对象本身是错的 |
 | V5 | vnpy 的 `ts_argmax`/`ts_argmin` 即 `arg_max()+1`（**1-based 自窗口起点**） | ✅ 与本库默认**一致** | 本库 §3.3 的默认口径获第二实现支持 |
-| V6 | vnpy 的 `ts_rank` 用 `scipy.percentileofscore(w, w[-1])/100` | ✅ 与本库 `ts_rank(pct=True)` **数学等价** | 实测逐点一致（含并列）；`pct=False` 是参照没有的分支 |
+| V6 | vnpy 的 `ts_rank` 用 `scipy.percentileofscore(w, w[-1])/100` | 与本库 `ts_rank(normalization="one_over_n")` **数学等价**（2026-10-10 起本库默认是官方 `zero_to_one`，见 V19） | 实测：按 `one_over_n` 对齐后逐点一致（含并列）；`ordinal` 是参照没有的分支 |
 | V7 | vnpy 的 `cs_rank` 用 `method="min"`；`cs_scale` 零和行给 `0`；预热期各算子不统一（多为 `min_samples=1` 填值） | 口径差异（可接受） | 均可用本库显式参数对齐或已文档化（`method=` / §3.4 / §2.3） |
 | V8 | vnpy 的算子签名是 `window: int`，**不支持非整数窗口** | 参照能力缺口 | 论文 58–99 号共 **40 个因子**用非整数窗口 ⇒ 参照无法表达；本库按论文 `floor(d)` 实现 |
 | V9 | vnpy 自述 alpha21 把 `>=1` 实现为 `>1`、alpha24 把 `<=0.05` 实现为 `<0.05` | 参照**主动标注**的边界偏差 | 因子级对拍时列为「已知差异」，**不得判为 bug**（§6.4）；留待 M4 |
@@ -214,9 +214,9 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 | V16 | vnpy 的 `ts_argmax`/`ts_argmin` = `arg_max()+1`（**自窗口起点 1-based**），而 BRAIN 官方是 **`days_ago`（今天=0）** | 6 个因子（1/57/60/96/98/100） | 本库默认按 BRAIN（`docs/operators.md` §3.3）；差分对拍时切 `basis="window_start"` 与 vnpy 对齐 |
 | V17 | vnpy 的 `pow1`/`pow2` 是**保号幂**（负底数 → `−|x|^y`），BRAIN 的 `power` 对整数指数给数学结果（`+x²`） | alpha48 的 `Σ((Δclose/delay)^2)` 会翻号 | 本库默认按 BRAIN（`elemwise.power`）；差分对齐时用 `signedpower(preserve_sign=True)` |
 | V18 | vnpy 的 `ts_decay_linear` 权重方向 = **最老权重最大**，BRAIN 官方是「近期权重大」 | 22 个 decay 因子 | 本库默认按 BRAIN；差分对齐时开 `order="oldest_first"` |
-| V19 | **`rank`/`ts_rank` 归一化区间**：BRAIN 完整文档给 `(名次−1)/(n−1) ∈ [0,1]`（最低=0.0、最高=1.0），本库与 vnpy 都是 `名次/n ∈ (0,1]` | **全部 101 个因子**（`rank` 167 处、`ts_rank` 62 处） | ⏳ **待落地**（下一里程碑） |
-| V20 | **`ts_std_dev` 的 ddof**：BRAIN 算例除以 **n**（`0.001/5`）⇒ **ddof=0**；本库默认 `ddof=1` | 8 个含 `stddev` 的因子 + `covariance` | ⏳ **待落地** |
-| V21 | **`ts_decay_linear` 缺失值**：BRAIN 默认 `dense=false`（**稀疏：NaN 当 0**，分母仍 `1+…+d`）；本库严格整窗有效否则 NaN | 22 个 decay 因子 | ⏳ **待落地**（需与「绝不填 NaN」契约显式二选一） |
+| V19 | **`rank`/`ts_rank` 归一化区间**：BRAIN 完整文档给 `(名次−1)/(n−1) ∈ [0,1]`（最低=0.0、最高=1.0），本库与 vnpy 都是 `名次/n ∈ (0,1]` | **全部 101 个因子**（`rank` 167 处、`ts_rank` 62 处） | ✅ **已落地**（默认改 `zero_to_one`，官方算例钉死）；vnpy 差异记为 D7/D7b，对拍时切 `one_over_n` |
+| V20 | **`ts_std_dev` 的 ddof**：BRAIN 算例除以 **n**（`0.001/5`）⇒ **ddof=0**；本库默认原为 `ddof=1` | 8 个含 `stddev` 的因子 + `covariance` | ✅ **已落地**（默认改 0）⇒ 与 vnpy 的 `ts_std` 一致，原 D2 差异**消失** |
+| V21 | **`ts_decay_linear` 缺失值**：BRAIN 默认 `dense=false`（**稀疏：NaN 当 0**，分母仍 `1+…+d`）；本库原为严格整窗有效否则 NaN | 22 个 decay 因子 | ✅ **已落地**（默认稀疏 `dense=False`，`dense=True` 保留严格口径）；vnpy 差异记为 D8。契约关系见 `operators.md` §3.12 |
 
 ## 5. 变更记录
 
@@ -224,7 +224,8 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 7 项与原 GPL 实现的偏差、设计文档勘误 4 条、vnpy 差异 5 项待复核、101 行清单模板 |
 | **v0.3** | 2026-10-09 | §3 重写为**算子层已实地复核**：24 项对拍（18 一致 + 6 归因 + 0 待查），差异表 V1–V10（含 `decay_linear` 方向相反这一 22 因子最高风险项、`ts_argmax`/`ts_rank` 与本库一致、vnpy 不支持非整数窗口、因子级差分缺 talib/math_function） |
-| **v0.7** | 2026-10-10 | **BRAIN 完整文档（API 级）入库**：§3.2 追加 V19–V21（归一化区间 / ddof / 稀疏 decay），均已由官方算例定案、**待落地** |
+| **v0.8** | 2026-10-10 | **V19–V21 全部落地**：归一化默认 `zero_to_one`、ddof 默认 0、`decay_linear` 默认稀疏；差分新增 D7/D7b/D8（D2 消失）；并新增一条由官方 `[0,1]` 闭区间引出的后果：`rank` 可取到 **0.0** ⇒ 比值型因子会除以 0，本库在因子输出边界把 ±inf 统一降级为 NaN（绝不加 epsilon） |
+| v0.7 | 2026-10-10 | **BRAIN 完整文档（API 级）入库**：§3.2 追加 V19–V21（归一化区间 / ddof / 稀疏 decay），均已由官方算例定案、**待落地** |
 | v0.6 | 2026-10-10 | **L-B 定案**：§3.2 追加 V16–V18（vnpy 的 argmax 基准、`pow` 保号、decay 方向都与 BRAIN 官方文档不同）⇒ 三条「vnpy 差异」现在都有了官方依据可判 |
 | v0.5 | 2026-10-10 | M4：新增 §3.2（V11–V15：vnpy 未实现的 19 个、`quesval2` 取反、窗口 round vs floor、`adv` 口径、min/max 与 pow2 的 NaN/0 策略）；因子级对拍 82/82 已判定（0 待查） |
 | v0.4 | 2026-10-09 | M3：§1.2 的 P1（非整数窗口 `floor(d)`）标记为**已修复**；§4 的 101 行模板替换为 `tools/conformance_report.py` **生成的实测清单**（101/101 等价） |
