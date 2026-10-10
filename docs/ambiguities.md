@@ -9,6 +9,11 @@
 > 设计文档的硬性要求：**有歧义的因子一律标 `ambiguous`，不得标 `verified`**（§9 R2）。
 > 本文档是《歧义清单》的载体，与 `docs/deviations.md`（偏差清单）配对使用。
 
+**`ambiguous` 的判定标准（本项目的显式划线）**：只有当**论文规范本身未定**、
+且不同读法会改变**因子含义/数值**时，才把因子标为 `ambiguous`（A4/A11/A20 → 27 个因子）。
+「缺失值/预热/并列/ddof 等库级约定」即使论文未写，也按**已决策**处理（A1/A7/A8/A16/A18/A22/A23），
+因为它们不改变公式的含义，只是本库的显式工程约定——两类都写进本文档，但标签不同。
+
 ## 0. 为什么要分类记录
 
 「正确」必须相对于**一个选定的规范**来定义。论文（arXiv:1601.00991）是**事实规范但不是官方标准**，
@@ -46,6 +51,11 @@
 | A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log(0/负)` → NaN（不产生 -inf） | L-A（论文列为函数而非算子） | ✅ M2 已交付：`tests/test_elemwise.py` |
 | A16 | `scale` 零和行的取值 | `0` vs `NaN` | **NaN**（0/0 未定义；拒绝把「无数据」伪装成 0）；⚠️ **vnpy 实测给 0** | L-C + 设计文档 §3.3 缺陷 7 的同类原则 | `test_b07`；差分 D5 |
 | A17 | `signedpower` 的指数可否是面板 | 常数 vs 表达式 | **两者都支持**：标量或同形面板（论文 Alpha#84 的指数是 `delta(close, …)`） | L-A（论文原文即是面板） | `test_signedpower_accepts_a_panel_exponent...` |
+| A20 | 论文中缀 `^` 的语义 | 论文字面 `x^a` vs 保号幂 `sign(x)·|x|^a` | **取保号幂**（负底数也能出值，与算子名自洽）；字面读法下 alpha90 会整片 NaN。**alpha48/alpha90 因此标 ambiguous** | L-A（论文列了 `signedpower(x,a)=x^a` 但公式用 `^`）+ L-C | `test_factors_all` 的 ambiguous 集合断言；差分待 M4 |
+| A21 | `min/max` 两种语义 | 第二参数是数值 vs 表达式 | **数值 ⇒ 时序 `ts_min/ts_max`；表达式 ⇒ 逐元素 `minimum/maximum`**（101 条公式上无冲突，可机械核验） | L-A（论文只定义 `min(x,d)=ts_min(x,d)`） | `tools/conformance_report.py` 分类 + `test_elemwise` |
+| A22 | 逐元素 `min/max` 的缺失语义 | NaN 传播 vs 视为缺失 | **视为缺失**（`np.fmin/fmax`）：一侧 NaN 取另一侧 | L-C 决策（论文未定义）；理由是避免 `max(分支A,分支B)` 型因子整片退化 | `test_minimum_maximum_treat_nan_as_missing` |
+| A23 | 比较/逻辑的缺失语义 | C 语义 False vs NaN 传播 | **NaN 传播**；`\|\|` 取 Kleene 三值 | L-C 决策（论文未定义） | 条件型因子的不变量测试 |
+| A24 | `IndClass.sector/industry/subindustry` 的落地 | 论文说「泛化的行业分类」 | A 股映射为 **申万 L1/L2/L3**，因子形参名 `ind_sector`/`ind_industry`/`ind_subindustry`（PIT 面板，非固定快照） | L-A（层级语义）+ 数据映射决策 | `tests/test_adapters_real_data.py` 三层正交性断言 |
 | A19 | `cap` 用总市值还是流通市值 | `total_mv`（万元）vs `circ_mv`（万元） | 冒烟用 **`total_mv`**；对 `rank` 型因子（如 `alpha56`）**两者等价**（正数缩放不变），对量纲敏感的组合会有差异 ⇒ **必须显式声明** | L-C（`rank` 不变性）+ 面板契约 §7.4「单位必须显式声明」 | `test_alpha56_is_invariant_under_positive_scaling_of_cap`；`docs/verification.md` §1.3 |
 | A18 | 预热期是否填值 | 严格 NaN vs `min_samples=1` 填值 | **统一严格 NaN**；⚠️ **vnpy 自身各算子不一致**（`ts_sum` 严格、`ts_min/max/mean/std/corr` 填值） | L-C（口径自定，关键是显式）+ L-D 实测 | `test_a25/a26`；变异 `m7`；差分 D3 |
 
@@ -86,6 +96,7 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 10 项歧义全部决策并绑定测试；因子层 7 类待决；4 项无法判定 |
-| **v0.4** | 2026-10-09 | 新增 A19（`cap` 用总市值还是流通市值：`rank` 型因子等价，但必须显式声明）；真实 A 股端到端见 `docs/verification.md` §1.3 |
+| **v0.5** | 2026-10-09 | M3 新增 A20（`^` 的两种读法 ⇒ alpha48/90 标 ambiguous）、A21（`min/max` 两种语义的消歧规则）、A22（逐元素 min/max 缺失语义）、A23（比较/逻辑缺失语义）、A24（IndClass 层级 → 申万 L1/L2/L3）；并写明 `ambiguous` 的判定标准（仅「论文未定且改变数值」才上标签） |
+| v0.4 | 2026-10-09 | 新增 A19（`cap` 用总市值还是流通市值：`rank` 型因子等价，但必须显式声明）；真实 A 股端到端见 `docs/verification.md` §1.3 |
 | v0.3 | 2026-10-09 | 加入 vnpy 差分实测：A1（vnpy `ts_std` ddof=0 且自身不一致）、A4（argmax 1-based 获 L-D 支持）、A5（`cs_scale` 同为每日截面）、**A11（`decay_linear` 方向与 vnpy 相反 ⇒ 22 因子的最高风险项）**；新增 A16（零和行 0 vs NaN）、A17（`signedpower` 指数可为面板）、A18（预热期策略 vs vnpy 的不一致）；A15 标记 M2 已交付 |
 | v0.2 | 2026-10-09 | 论文原文核对后：①`indneutralize` 去均值语义 **L-A 定案**（从歧义移出）②`adv{d}` **L-A 定案**为美元成交额 ③新增 A11 `decay_linear` 权重顺序（22 因子）、A12 非整数窗口 floor（40 因子）、A13 `signedpower`、A14 `adv` 映射、A15 逐元素层 ④A4（argmax 基准）、A5（scale 轴向）确认为**论文自身歧义**，待 BRAIN/vnpy 定案 |

@@ -293,6 +293,28 @@ def test_a20_correlation_constant_series_is_nan_not_zero_or_inf():
     assert out[-1] != 0.0
 
 
+def test_a20b_correlation_and_covariance_never_return_inf_on_near_constant_windows():
+    """★ 由 M3 全量因子跑暴露的边界：**近乎**零方差窗口里 pandas 会给出 ±inf。
+
+    本库的显式承诺是「分母为 0 ⇒ NaN」，因此必须把 ±inf 掩成 NaN。
+    （构造：一侧是常数附近 1e-18 级抖动的序列，另一侧是正常序列。）
+    """
+    rng = np.random.default_rng(3)
+    base = pd.DataFrame(
+        rng.normal(size=(40, 3)), index=pd.date_range("2021-01-04", periods=40, freq="B")
+    )
+    nearly_constant = pd.DataFrame(
+        np.full((40, 3), 1.0) + rng.normal(scale=1e-18, size=(40, 3)),
+        index=base.index, columns=base.columns,
+    )
+    for name, frame in (
+        ("correlation", ops.correlation(nearly_constant, base, 5)),
+        ("covariance", ops.covariance(nearly_constant, base, 5)),
+    ):
+        values = frame.to_numpy(dtype=float)
+        assert not np.isinf(values).any(), f"{name} 在近乎零方差窗口给出了 ±inf"
+
+
 def test_a21_correlation_matches_pandas():
     """与 ``pandas.rolling().corr()`` 逐点 allclose（容差 rtol=1e-10）。"""
     rng = np.random.default_rng(7)

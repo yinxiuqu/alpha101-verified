@@ -39,14 +39,15 @@ def _panel() -> dict[str, pd.DataFrame]:
     return {"close": close, "volume": volume}
 
 
-def test_registry_holds_exactly_the_four_pilots():
-    """M2 试点：导入即注册 4 个因子，且**全部 partial、绝无 verified**（诚实标注，§6.8）。"""
+def test_registry_holds_all_101_factors():
+    """M3：导入即注册 101 个因子；状态只有 partial/ambiguous，**绝无 verified**（§6.8）。"""
     import alpha101v.factors  # noqa: F401  （导入即注册）
 
-    assert set(registry.REGISTRY) == {"alpha101", "alpha4", "alpha5", "alpha41", "alpha56"}
+    assert len(registry.REGISTRY) == 101
+    assert set(registry.REGISTRY) == {f"alpha{n}" for n in range(1, 102)}
     report = registry.status_report()
     assert list(report.columns) == ["factor", "status", "fields", "paper_ref", "notes"]
-    assert set(report["status"]) == {"partial"}
+    assert set(report["status"]) == {"partial", "ambiguous"}
     assert (report["paper_ref"].str.contains("Appendix A")).all()
 
 

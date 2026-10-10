@@ -42,6 +42,7 @@ __all__ = [
     "UNITS",
     "PanelContractError",
     "assert_valid_panel",
+    "is_non_numeric_field",
     "returns_from_close",
     "validate_panel",
     "vwap_from_amount",
@@ -49,7 +50,16 @@ __all__ = [
 
 #: 9 个字段即 Alpha101 全部所需输入（设计文档 §3.2）。
 REQUIRED_FIELDS: tuple[str, ...] = ("close", "Open", "high", "low", "volume", "vwap", "returns")
-OPTIONAL_FIELDS: tuple[str, ...] = ("amount", "cap", "ind")
+OPTIONAL_FIELDS: tuple[str, ...] = (
+    "amount",
+    "cap",
+    "ind",
+    # 论文 `IndClass.sector/industry/subindustry` 的落地（因子层形参名即这三个键）；
+    # A 股映射为申万 L1/L2/L3，见 docs/ambiguities.md A24。
+    "ind_sector",
+    "ind_industry",
+    "ind_subindustry",
+)
 ALL_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS
 
 #: 价格类字段（缩放/平移不变量测试的对象）。
@@ -58,8 +68,10 @@ PRICE_FIELDS: tuple[str, ...] = ("close", "Open", "high", "low", "vwap")
 #: 论文最长滚动窗口为 250 日（§7.4 最小历史长度要求）。
 MIN_HISTORY_DAYS: int = 250
 
-#: 行业标签字段不是数值，校验时豁免 dtype 检查。
-NON_NUMERIC_FIELDS: tuple[str, ...] = ("ind",)
+#: 行业标签字段不是数值，校验时豁免 dtype 检查（含 `ind_sector/ind_industry/ind_subindustry`）。
+def is_non_numeric_field(name: str) -> bool:
+    """行业标签类字段（`ind` 及各 `ind_<level>`）不是数值，豁免 dtype/inf 检查。"""
+    return name == "ind" or name.startswith("ind_")
 
 UNITS: dict[str, str] = {
     "close": "元（前复权）",
@@ -72,6 +84,9 @@ UNITS: dict[str, str] = {
     "returns": "小数（非百分数），由前复权 close 计算",
     "cap": "万元（建议 total_mv）",
     "ind": "行业分类标签（必须 PIT/as-of；非数值）",
+    "ind_sector": "行业标签·论文 IndClass.sector（A 股映射申万 L1；非数值，PIT）",
+    "ind_industry": "行业标签·论文 IndClass.industry（A 股映射申万 L2；非数值，PIT）",
+    "ind_subindustry": "行业标签·论文 IndClass.subindustry（A 股映射申万 L3；非数值，PIT）",
 }
 
 
@@ -94,7 +109,7 @@ def _check_frame(name: str, frame: object, min_history: int | None) -> list[str]
     if not frame.columns.is_unique:
         problems.append(f"字段 {name!r} 的 columns 有重复股票代码")
 
-    if name not in NON_NUMERIC_FIELDS:
+    if not is_non_numeric_field(name):
         bad = [c for c in frame.columns if not pd.api.types.is_numeric_dtype(frame[c])]
         if bad:
             problems.append(f"字段 {name!r} 含非数值列：{bad[:5]}")

@@ -272,6 +272,47 @@ linearly decaying weights **d, d – 1, …, 1** (rescaled to sum up to 1)"*。
   这是**合理推断**，已记录（`docs/paper_formulas.md` §7.1）；
 * **落地状态**：本条属**已判定但尚未改码**（M1 冻结件；改动将同时更新 `§4.4`、`test_a27` 与 `docs/paper_formulas.md` §7.1）。
 
+### 3.9 论文 `adv{d}` 的落地：取 `amount`（美元成交额），不是 `volume`
+
+论文逐字：``adv{d} = average daily dollar volume for the past d days``。
+A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``。
+用股数 `volume` 替代属**近似**（设计文档 §6.3 举的正是这个例子），影响 **45 个因子**，
+已记入 `docs/deviations.md` §1.2 P2。实现上 `adv{d}` 是**字段**（论文标识符的一部分），
+不是算子——规范对照器把 ``_adv(amount, d)`` 映射回 `adv{d}` 再比对。
+
+### 3.10 `min`/`max` 的两种语义（论文里同名不同义）
+
+论文的算子表只定义了 ``min(x, d) = ts_min(x, d)``（第二参数是**天数**），
+但 9 个因子写成 ``min/max(表达式, 表达式)``（两侧都是序列）。本库的消歧规则：
+
+| 第二参数 | 语义 | 落地 | 用到的因子 |
+|---|---|---|---|
+| 数值（如 `min(x, 5)`） | 时序窗口最小/最大 | `ts_min` / `ts_max` | alpha29（`min(..., 5)`）等 |
+| 表达式（序列） | **逐元素**最小/最大 | `elemwise.minimum` / `maximum` | 29/71/73/76/77/82/88/92/96 |
+
+该规则在 101 条公式上无冲突（可机械核验：`tools/conformance_report.py` 的分类结果）。
+
+### 3.11 论文中缀 `^` 的语义：取**保号幂**（`sign(x)·|x|^a`）
+
+论文的算子表里没有独立的 `^` 算子，只有 ``signedpower(x, a) = x^a``；而公式里 16 处使用 `^`
+（含负底数：alpha90 的 `(close − ts_max(close, d))`、alpha48 的负收益）。两种读法：
+
+* **保号幂**（`sign(x)·|x|^a`，**本库默认**）：负底数也能出值，与算子名 *signed* power 自洽；
+* 论文字面 `x^a`：负底数 + 分数指数 ⇒ **NaN**（会把 alpha90 整片打成 NaN）。
+
+两种读法只在**底数为负**时不同，因此 **alpha48、alpha90 被标为 `ambiguous`**（见 §7）。
+切换方式：把 `factors._pow` 改成 `signedpower(..., preserve_sign=False)`。
+
+### 3.12 缺失值语义（论文未规定，本库显式决策）
+
+| 场景 | 本库决策 | 理由 | 影响 |
+|---|---|---|---|
+| 比较（`<` `>` `==`），任一侧 NaN | **结果 NaN**（不是 C 语义的 False） | 把「未知」输出成 0 会让下游当成真实结论（§3.3 缺陷 7 的同类批评） | 所有条件型因子 |
+| 逻辑 `\|\|` | **Kleene 三值**：True∨未知=True；False∨未知=未知 | 同上 | alpha21/24 |
+| 三元 `cond ? a : b`，cond 为 NaN | 结果 NaN | 同上 | 16 处 |
+| 逐元素 `min/max`，一侧 NaN | **返回另一侧**（`np.fmin/fmax`），两侧皆 NaN ⇒ NaN | 论文未定义；若取 NaN 传播，alpha96 这类 `max(分支A, 分支B)` 会在某分支系统性 NaN 时**整片退化**（实测教训） | 9 个因子 |
+| `log(x)`，x ≤ 0 | NaN（不是 −inf） | §3.9 的 elemwise 层决策 | alpha2/29/81 |
+
 ## 4. 逐算子定义
 
 记窗口 `d = window`，`x_t` 为某只股票在 t 日的取值，滚动窗口覆盖 `t-d+1 … t`（含当日，不用未来数据）。
@@ -462,5 +503,6 @@ linearly decaying weights **d, d – 1, …, 1** (rescaled to sum up to 1)"*。
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：20 算子口径、六个歧义点决策、边界策略、设计文档勘误 4 条、M4 归一化清单 |
-| **v0.3** | 2026-10-09 | 加入 **vnpy 差分实测**：§3.1（vnpy `ts_std` 用 ddof=0 且与自身 `cs_std` 不一致）、§3.2（`cs_rank`=min+pct；`ts_rank` 与 `percentileofscore` 数学等价、实测逐点一致）、§3.3（vnpy `arg_max()+1` ⇒ 本库 1-based 默认获第二实现支持）、§3.4（`cs_scale` 同为每日截面）、§3.6（文档那组并列数字其实与参照 min 口径吻合）、**§3.7（vnpy 的 `decay_linear` 权重方向与本库默认相反 ⇒ 22 个因子的最高风险项，新增 `order` 参数对齐）**；§6 换成实测归一化清单（18 项一致 + 6 项归因 + 3 项参照能力边界）；§7 更新 1/2 项 |
+| **v0.4** | 2026-10-09 | M3 新增：§3.9 `adv{d}` 取 `amount`（影响 45 因子）、§3.10 `min/max` 两种语义的消歧规则、§3.11 中缀 `^` 取保号幂（alpha48/90 因此标 ambiguous）、§3.12 **缺失值语义总表**（比较/逻辑/三元/逐元素 min-max/log）；并追加一条由全量因子跑暴露并修掉的算子边界：`correlation`/`covariance` 在近乎零方差窗口中的 ±inf 一律掩为 NaN |
+| v0.3 | 2026-10-09 | 加入 **vnpy 差分实测**：§3.1（vnpy `ts_std` 用 ddof=0 且与自身 `cs_std` 不一致）、§3.2（`cs_rank`=min+pct；`ts_rank` 与 `percentileofscore` 数学等价、实测逐点一致）、§3.3（vnpy `arg_max()+1` ⇒ 本库 1-based 默认获第二实现支持）、§3.4（`cs_scale` 同为每日截面）、§3.6（文档那组并列数字其实与参照 min 口径吻合）、**§3.7（vnpy 的 `decay_linear` 权重方向与本库默认相反 ⇒ 22 个因子的最高风险项，新增 `order` 参数对齐）**；§6 换成实测归一化清单（18 项一致 + 6 项归因 + 3 项参照能力边界）；§7 更新 1/2 项 |
 | v0.2 | 2026-10-09 | 加入论文原文（arXiv:1601.00991v3，逐字入库于 `docs/paper_formulas.md`）核对结论：①`indneutralize` 语义获 **L-A 确认**（组内截面去均值）②新增 §3.7 `decay_linear` 权重列举顺序歧义（22 因子）③新增 §3.8 非整数窗口 `floor(d)` 规则（40 因子，本库当前偏离待改）④§3.3 补记 argmax 基准在论文中同样未定义（6 因子，两读法为序反转）⑤§3.4 补记 `scale` 轴向论文未写（6 因子）⑥§1 补记逐元素函数层缺口（15 因子）⑦§7 未决表按影响面重排 |

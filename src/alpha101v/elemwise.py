@@ -36,12 +36,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .operators import _prep
+from .operators import _as_frame, _prep
 
-__all__ = ["ELEMWISE", "abs_", "log", "sign", "signedpower"]
+__all__ = ["ELEMWISE", "abs_", "log", "maximum", "minimum", "sign", "signedpower"]
 
 #: 逐元素层的公开函数面（**与 20 算子面互不相交**，见模块文档串）。
-ELEMWISE: tuple[str, ...] = ("abs_", "log", "sign", "signedpower")
+ELEMWISE: tuple[str, ...] = ("abs_", "log", "maximum", "minimum", "sign", "signedpower")
 
 _NONFINITE_RESULT_POLICY = "结果非有限（含 0 的负次幂）→ NaN，不产生 ±inf"
 
@@ -82,6 +82,52 @@ def _exponents(a: object, like: pd.DataFrame) -> float | np.ndarray:
             raise ValueError("指数面板含 ±inf（面板契约要求先清洗）")
         return values
     raise TypeError(f"指数 a 必须是实数或同形面板，收到 {type(a).__name__}")
+
+
+def minimum(left: object, right: object) -> pd.DataFrame:
+    """逐元素最小（论文里 `min(表达式, 表达式)` 的落地；第二参数是常数时走 `ts_min`）。
+
+    ★ 口径决策：**NaN 视为缺失**（``np.fmin`` 语义）——一侧缺失时返回另一侧，
+    两侧皆缺失才给 NaN。理由（见 docs/operators.md §3.12）：
+
+    1. 论文只定义了 ``min(x, d) = ts_min(x, d)``，对「逐元素 min/max」的缺失语义**未作规定**；
+    2. 若取 NaN 传播，形如 ``alpha96 = max(分支A, 分支B)`` 的因子会在某一分支系统性为 NaN 时
+       **整片退化为 NaN**（实测：3 日窗口内 rank 序列零方差 ⇒ 相关系数 NaN ⇒ 长链断裂）；
+    3. ``min/max`` 在 pandas/polars 里的通行语义本就跳过缺失（na.rm），取 fmin/fmax 与之一致。
+    """
+    return _pairwise(left, right, np.fmin)
+
+
+def maximum(left: object, right: object) -> pd.DataFrame:
+    """逐元素最大（论文里 `max(表达式, 表达式)` 的落地）；NaN 视为缺失，见 :func:`minimum`。"""
+    return _pairwise(left, right, np.fmax)
+
+
+def _operand_values(obj: object, like: pd.DataFrame, name: str):
+    """取操作数数值：标量直接广播，面板则要求与 ``like`` 同 (index, columns) 契约。"""
+    if isinstance(obj, bool):
+        raise TypeError(f"{name} 不能是布尔值")
+    if isinstance(obj, (int, float, np.integer, np.floating)):
+        return float(obj)
+    frame, values = _values(obj, name)
+    if not frame.index.equals(like.index) or not frame.columns.equals(like.columns):
+        raise ValueError(f"{name} 必须与另一侧共享同一 (index, columns) 契约")
+    return values
+
+
+def _pairwise(left: object, right: object, operation) -> pd.DataFrame:
+    reference = None
+    for candidate in (left, right):
+        if isinstance(candidate, (pd.DataFrame, pd.Series)):
+            reference = _as_frame(candidate)
+            break
+    if reference is None:
+        raise TypeError("逐元素 min/max 至少需要一个 DataFrame/Series 操作数")
+    left_values = _operand_values(left, reference, "left")
+    right_values = _operand_values(right, reference, "right")
+    with np.errstate(invalid="ignore"):
+        result = operation(left_values, right_values)
+    return _wrap(result, reference)
 
 
 def abs_(df: pd.DataFrame) -> pd.DataFrame:

@@ -57,6 +57,25 @@ def pick_codes(end: str, n_codes: int, seed: int, uri: str) -> list[str]:
     return sorted(rng.choice(pool, size=size, replace=False).tolist())
 
 
+PILOT_FACTORS = ("alpha101", "alpha4", "alpha5", "alpha41", "alpha56")
+INDUSTRY_FACTORS = (
+    "alpha48", "alpha58", "alpha59", "alpha63", "alpha67", "alpha69", "alpha70", "alpha76",
+    "alpha79", "alpha80", "alpha82", "alpha87", "alpha89", "alpha90", "alpha91", "alpha93",
+    "alpha97", "alpha100",
+)
+
+
+def _select_factors(which: str) -> list[str]:
+    """挑选要跑的因子集合（全量 101 个在大面板上耗时较长，故给子集开关）。"""
+    if which == "all":
+        return sorted(registry.REGISTRY)
+    if which == "pilots":
+        return sorted(PILOT_FACTORS)
+    if which == "industry":
+        return sorted(INDUSTRY_FACTORS)
+    return sorted(set(PILOT_FACTORS) | set(INDUSTRY_FACTORS))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="真实 A 股面板冒烟")
     parser.add_argument("--n-codes", type=int, default=120)
@@ -68,6 +87,11 @@ def main() -> int:
     parser.add_argument("--uri", default=DEFAULT_URI)
     parser.add_argument("--no-industry", action="store_true")
     parser.add_argument("--adjust", default="hfq", choices=("hfq", "qfq", "none"))
+    parser.add_argument(
+        "--factors", default="sample", choices=("pilots", "industry", "sample", "all"),
+        help="跑哪些因子：pilots=设计文档试点 5 个；industry=18 个行业中性化因子；"
+             "sample=两者并集（默认）；all=全部 101 个",
+    )
     args = parser.parse_args()
 
     print(f"■ 取样：{args.start} ~ {args.end}，n_codes={args.n_codes}，行业层级={args.level}")
@@ -80,9 +104,16 @@ def main() -> int:
     print(f"  面板形状：{len(index)} 交易日 × {len(columns)} 只（{index[0].date()} ~ {index[-1].date()}）")
 
     if not args.no_industry:
-        industry = load_sw_industry(index, columns, level=args.level)
-        panels["ind"] = industry
-        print(f"  行业覆盖率：{industry.attrs.get('coverage', float('nan')):.1%}（level={args.level}）")
+        # 三个层级分别对应论文的 IndClass.sector / industry / subindustry（申万 L1/L2/L3）
+        panels["ind_sector"] = load_sw_industry(index, columns, level="L1")
+        panels["ind_industry"] = load_sw_industry(index, columns, level="L2")
+        panels["ind_subindustry"] = load_sw_industry(index, columns, level="L3")
+        industry = panels["ind_subindustry"]
+        coverages = " / ".join(
+            f"{float(panels[key].notna().to_numpy().mean()):.1%}"
+            for key in ("ind_sector", "ind_industry", "ind_subindustry")
+        )
+        print(f"  行业覆盖率（L1/L2/L3）：{coverages}")
 
     # ---- 1) 面板契约 ----
     min_history = args.min_history or None
@@ -119,8 +150,10 @@ def main() -> int:
     print("\n■ 试点因子（真实数据；**不看 IC**，只看算得出/不产 inf/覆盖面）")
     print("| 因子 | 状态 | 非 NaN 比例 | 均值 | 标准差 | min | max | inf |")
     print("|---|---|---|---|---|---|---|---|")
+    selected = _select_factors(args.factors)
+    print(f"  （本次跑 {len(selected)} 个因子：{args.factors}）")
     factor_series: dict[str, pd.DataFrame] = {}
-    for name in sorted(registry.REGISTRY):
+    for name in selected:
         out = registry.run_factor(name, panels)
         factor_series[name] = out
         values = out.to_numpy(dtype=float)
@@ -136,10 +169,10 @@ def main() -> int:
     # ---- 4) 真实数据上的 ind_neutralize 正交性（PIT 行业面板）----
     failures: list[str] = []
     if industry is not None and "alpha4" in factor_series:
-        resid = ind_neutralize(factor_series["alpha4"], industry)
+        resid = ind_neutralize(factor_series["alpha4"], panels["ind_subindustry"])
         worst = 0.0
         for day in resid.index:                     # PIT：逐日用**当日**行业标签分组
-            sums = resid.loc[day].groupby(industry.loc[day]).sum()
+            sums = resid.loc[day].groupby(panels["ind_subindustry"].loc[day]).sum()
             if sums.size:
                 worst = max(worst, float(np.nanmax(np.abs(sums.to_numpy()))))
         print(f"\n■ PIT 行业中性化（对 alpha4）：逐日行业内残差和的最大绝对值 = {worst:.3e}（应 ≈ 0）")
@@ -148,16 +181,29 @@ def main() -> int:
 
     if problems:
         failures.extend(problems)
+    # 样本长度是否够：论文里有 250 日窗口的因子，样本太短时全 NaN 属正常
+    shortest_long_window = 250
+    enough_history = len(index) >= shortest_long_window
+    warnings: list[str] = []
     for name, out in factor_series.items():
         values = out.to_numpy(dtype=float)
         if np.isinf(values).any():
             failures.append(f"{name} 产生 ±inf")
         if np.isfinite(values).sum() == 0:
-            failures.append(f"{name} 全为 NaN")
+            message = f"{name} 全为 NaN"
+            if enough_history:
+                failures.append(message)
+            else:
+                warnings.append(message + f"（样本仅 {len(index)} 行 < 最长窗口 250，属预期）")
     if not (ratio > 0.99):
         failures.append(f"vwap 单位口径自洽率过低：{ratio:.2%}")
     if hit and worst >= 0.21:
         failures.append(f"除权日复权后收益率仍达 {worst:.2%}（复权可能失效）")
+
+    if warnings:
+        print(f"\n⚠️ 数据长度不足导致的预期空值（{len(warnings)} 个）：")
+        for item in warnings:
+            print(f"  - {item}")
 
     print()
     if failures:

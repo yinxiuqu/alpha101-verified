@@ -23,11 +23,12 @@ def frame(values, cols=COLS) -> pd.DataFrame:
 
 def test_elemwise_surface_is_separate_from_the_twenty_operators():
     """逐元素层与 20 算子面互不相交，且都从包命名空间导出。"""
-    assert set(elemwise.ELEMWISE) == {"abs_", "log", "sign", "signedpower"}
+    assert set(elemwise.ELEMWISE) == {"abs_", "log", "maximum", "minimum", "sign", "signedpower"}
     assert not set(elemwise.ELEMWISE) & set(alpha101v.OPERATORS)
     assert len(alpha101v.OPERATORS) == 20
     for name in elemwise.ELEMWISE:
-        assert callable(getattr(alpha101v, name)), name
+        assert callable(getattr(elemwise, name)), name
+    # 只有逐元素层自己的 6 个函数**不**进 20 算子面（`alpha101v.OPERATORS` 由另一测试守 20）
 
 
 def test_abs_matches_numpy():
@@ -136,6 +137,22 @@ def test_signedpower_zero_base_with_negative_exponent_is_nan_not_inf():
         assert not np.isinf(out.to_numpy(dtype=float)).any()
 
 
+def test_minimum_maximum_treat_nan_as_missing():
+    """★ 口径决策：`fmin/fmax` 语义 —— 一侧 NaN 时取另一侧，两侧皆 NaN 才给 NaN。"""
+    left = frame([[1.0, np.nan], [3.0, np.nan], [np.nan, np.nan]])
+    right = frame([[2.0, 5.0], [np.nan, np.nan], [np.nan, np.nan]])
+    np.testing.assert_allclose(
+        elemwise.minimum(left, right).to_numpy(),
+        [[1.0, 5.0], [3.0, np.nan], [np.nan, np.nan]],
+        equal_nan=True,
+    )
+    np.testing.assert_allclose(
+        elemwise.maximum(left, right).to_numpy(),
+        [[2.0, 5.0], [3.0, np.nan], [np.nan, np.nan]],
+        equal_nan=True,
+    )
+
+
 def test_elemwise_series_sugar_returns_dataframe():
     series = pd.Series([-2.0, 0.0, 3.0], index=IDX, name="px")
     out = elemwise.abs_(series)
@@ -153,6 +170,8 @@ def test_elemwise_does_not_modify_inputs(name):
         "log": lambda: elemwise.log(data),
         "sign": lambda: elemwise.sign(data),
         "signedpower": lambda: elemwise.signedpower(data, 2.0),
+        "minimum": lambda: elemwise.minimum(data, -1.0),
+        "maximum": lambda: elemwise.maximum(data, 1.0),
     }[name]
     call()
     pd.testing.assert_frame_equal(data, snapshot)

@@ -158,6 +158,22 @@ def _prep_win(obj: object, window: object, name: str = "input") -> tuple[pd.Data
     return frame, _check_window(window)
 
 
+def _finite_or_nan(frame: pd.DataFrame) -> pd.DataFrame:
+    """把 ±inf 一律降级为 NaN。
+
+    ★ 为什么需要它：`pandas.rolling().corr()` 在**近乎零方差**的窗口里会给出 ±inf
+    （方差是 1e-18 级别的非零值 ⇒ 0/0 变成有限值/极小值），这违反本库
+    「分母为 0 ⇒ NaN」的显式承诺（详见 docs/operators.md §3.5）。
+    该问题由 M3 的 101 因子全量跑（alpha3/44/55）暴露出来。
+    """
+    values = frame.to_numpy(dtype=float)
+    if np.isfinite(values).all():
+        return frame
+    return pd.DataFrame(
+        np.where(np.isfinite(values), values, np.nan), index=frame.index, columns=frame.columns
+    )
+
+
 def _check_aligned(x: pd.DataFrame, y: pd.DataFrame, op: str) -> None:
     """二元算子要求两块面板共享同一 (index, columns) 契约。"""
     if x.shape != y.shape or not x.index.equals(y.index) or not x.columns.equals(y.columns):
@@ -206,7 +222,7 @@ def correlation(x: pd.DataFrame, y: pd.DataFrame, window: int | float) -> pd.Dat
     x, window = _prep_win(x, window, "x")
     y, _ = _prep_win(y, window, "y")
     _check_aligned(x, y, "correlation")
-    return x.rolling(window=window, min_periods=window).corr(y)
+    return _finite_or_nan(x.rolling(window=window, min_periods=window).corr(y))
 
 
 def covariance(x: pd.DataFrame, y: pd.DataFrame, window: int | float, ddof: int = 1) -> pd.DataFrame:
@@ -220,7 +236,7 @@ def covariance(x: pd.DataFrame, y: pd.DataFrame, window: int | float, ddof: int 
     _check_aligned(x, y, "covariance")
     if ddof not in ALLOWED_DDOF:
         raise ValueError(f"ddof 只接受 {ALLOWED_DDOF}（显式口径），收到 {ddof}")
-    cov = x.rolling(window=window, min_periods=window).cov(y)
+    cov = _finite_or_nan(x.rolling(window=window, min_periods=window).cov(y))
     if ddof == 1:
         return cov
     return cov * (window - 1) / window
@@ -384,4 +400,4 @@ def scale(df: pd.DataFrame, k: float = 1.0) -> pd.DataFrame:
     if not np.isfinite(k) or k <= 0:
         raise ValueError(f"k 必须是有限正数（口径 Σ|x| = k），收到 {k}")
     total = df.abs().sum(axis=1)
-    return df.div(total, axis=0) * k
+    return _finite_or_nan(df.div(total, axis=0) * k)

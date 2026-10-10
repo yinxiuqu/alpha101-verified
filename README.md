@@ -6,13 +6,13 @@
 
 | 项 | 状态（2026-10-09） |
 |---|---|
-| 里程碑 | **M0 完成**（骨架/许可/面板契约/CI）、**M1 完成**（20 个算子 + §8 全部用例 + 变异测试）、**M2 完成**（论文规范入库 + `floor(d)` + `elemwise` + **5 个试点因子** + 算子层差分 + **真实 A 股面板端到端**） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**297** 个测试全绿；7/7 变异注入被抓住 |
+| 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**643** 个测试全绿（12 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
-| 因子层（M2 试点） | 🟡 **5/101**：`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56` 已实现并验证（设计文档 §7.7 的试点清单**全部完成**），状态一律 **`partial`** |
-| **真实数据端到端** | ✅ **359 交易日 × 120 只 A 股**（本地 MongoDB + 申万 as-of 行业）：面板契约通过、`vwap ∈ [low,high]` 自洽率 **99.86%**、5 因子全部算得出且**零 ±inf**、`ind_neutralize` 逐日行业内残差和 **3.4e-15**。⚠️ 价格**未复权**（见 `docs/verification.md` §1.3） |
-| 因子层（L2–L5） | 🟡 L2 轻量结构对照 + L4 不变量已做（5 个试点）；**L2 全量 AST 对照（M3）／因子级差分（M4）／golden 快照（M5）未完成** |
-| `verified` 因子数 | **0/101**（5 个试点全为 `partial`：六条门槛里 L2 全量/L3-因子级/L5 未满足——诚实计数） |
+| 因子层 | ✅ **101/101 已实现**；状态 `partial` 74 / **`ambiguous` 27** / `verified` **0**（诚实计数：`verified` 需六条门槛，M4/M5 未完成） |
+| **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
+| 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**（算子级）；✅ L4 不变量全量通过；⛔ 因子级差分（M4）／golden 快照（M5）未完成 |
+| `verified` 因子数 | **0/101**（六条门槛里 L3-因子级差分（M4）与 L5 golden（M5）未满足——诚实计数） |
 | 许可 | **MIT**（clean-room，零 GPL 血缘；CI 有机械守卫） |
 
 ---
@@ -92,6 +92,9 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 无前视（PIT 金标准） | `test_time_truncation_consistency`（19 个算子）+ `test_future_perturbation_does_not_change_past` |
 | 未用将被删除的 pandas API（原实现死于 `as_matrix`） | `test_no_deprecated_pandas_api_warnings`（22 个调用点在 `FutureWarning`/`DeprecationWarning` 转异常下运行，0 警告） |
 | 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：24 项中 18 项对齐后逐点一致（含 argmax 基准、ts_rank 口径、decay 方向对齐后） |
+| **101 个因子与论文公式结构一致** | `tools/conformance_report.py`：算子／字段／字面量三重对照 ⇒ **101/101 等价、0 偏离** |
+| 全量因子的 PIT 与契约 | `tests/test_factors_all.py`：101 个因子逐一验证「可算不产 ±inf／入参不可变／时间截断一致性」 |
+| 复权修正除权日假跳空 | `tests/test_adjust.py`（11 项）+ `tests/test_adapters_real_data.py`（真实数据 35.11% → 7.60%） |
 | 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha5/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
 | 真实数据上契约与不变量成立 | `tests/test_adapters_real_data.py`（11 项）：面板契约、`vwap` 单位自洽、因子零 ±inf、PIT 行业中性化正交、真实数据时间截断一致性 |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
@@ -137,6 +140,7 @@ alpha101-verified/
 │   ├── test_adapters_real_data.py  # 真实 A 股数据端到端（无数据库时跳过）
 │   └── golden/                 # golden 快照（M5 建；现为空并有说明）
 ├── tools/
+│   ├── conformance_report.py   # ★ 规范对照：论文公式 ↔ 实现 AST（算子/字段/字面量），生成偏差清单
 │   ├── differential.py         # ★ 算子层差分对拍（本库 vs vnpy MIT），退出码即证据
 │   ├── fetch_vnpy_reference.sh # 下载参照源码到 gitignored 的 .vnpy-ref/（含 SHA256 校验）
 │   └── README.md               # conformance_report.py 待 M3
@@ -159,7 +163,7 @@ alpha101-verified/
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
 | **M2** | 5 个试点因子 + L2/L3/L4 首跑 | ✅ **完成**：`floor(d)`、`elemwise` 层、5 个试点因子（`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56`）、算子层 L3 差分、真实 A 股端到端。余项：L2 全量 AST 对照（M3）、因子级差分（M4） |
-| M3 | 101 个因子 + 规范对照 + 偏差清单 | ⛔ |
+| **M3** | 101 个因子 + 规范对照 + 偏差清单 | ✅ **完成**：101/101 因子、L2 对照 101/101 等价、PIT 安全复权、偏差清单由工具生成（`docs/deviations.md` §4） |
 | M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |
 | M5 | golden 快照 + 文档 + 发布 | ⛔ |
 

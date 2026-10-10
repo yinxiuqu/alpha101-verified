@@ -243,6 +243,75 @@ def test_real_hfq_levels_are_pit_consistent_but_qfq_levels_are_not():
         pd.testing.assert_frame_equal(part_ret.loc[:mid], full_ret.loc[:mid], check_exact=False)
 
 
+# ---------------------------------------------------------------------------
+# 行业中性化因子（论文 IndClass.sector / industry / subindustry）——真实 PIT 面板
+# ---------------------------------------------------------------------------
+
+#: 用到 IndNeutralize 的 18 个因子（论文逐字统计，见 docs/paper_formulas.md §7.5）。
+INDUSTRY_FACTORS = (
+    "alpha48", "alpha58", "alpha59", "alpha63", "alpha67", "alpha69", "alpha70", "alpha76",
+    "alpha79", "alpha80", "alpha82", "alpha87", "alpha89", "alpha90", "alpha91", "alpha93",
+    "alpha97", "alpha100",
+)
+#: 这 18 个因子用的最长窗口是 250 日，因此样本必须够长（用 18 只股票换更长的历史）。
+INDUSTRY_CODES = [
+    "000001", "000002", "000063", "000100", "000153", "000402", "000567", "000657", "000858",
+    "002415", "002594", "600000", "600036", "600519", "600887", "601318", "601398", "603259",
+]
+INDUSTRY_WINDOW = ("2023-01-03", "2024-06-28")
+
+
+@pytest.fixture(scope="module")
+def industry_panel() -> dict:
+    """带**三个行业层级**的真实 PIT 面板（申万 L1/L2/L3 → 论文 sector/industry/subindustry）。"""
+    from alpha101v.adapters.industry import load_sw_industry
+    from alpha101v.adapters.mongo import load_panel
+
+    panel = load_panel(INDUSTRY_CODES, *INDUSTRY_WINDOW, adjust="hfq")
+    index, columns = panel["close"].index, panel["close"].columns
+    panel["ind_sector"] = load_sw_industry(index, columns, level="L1")
+    panel["ind_industry"] = load_sw_industry(index, columns, level="L2")
+    panel["ind_subindustry"] = load_sw_industry(index, columns, level="L3")
+    return panel
+
+
+#: 长链因子在**小截面**（18 只）上覆盖率极低，是截面规模问题而非实现缺陷
+#: （同一现象在 alpha96 上由 300 只股票的大样本复现并排除）。此处断言**已记录的当前行为**，
+#: 一旦改善（覆盖率上升）测试会失败并提示更新文档。
+LONG_CHAIN_LOW_COVERAGE = {"alpha97"}
+
+
+@pytest.mark.parametrize("name", INDUSTRY_FACTORS)
+def test_industry_factors_run_on_real_pit_panel(name, industry_panel):
+    """18 个行业中性化因子在真实 PIT 面板上算得出、不产生 ±inf、覆盖率符合记录。"""
+    out = registry.run_factor(name, industry_panel)
+    assert out.index.equals(industry_panel["close"].index)
+    values = out.to_numpy(dtype=float)
+    assert not np.isinf(values).any(), f"{name} 产生 ±inf"
+    coverage = float(np.isfinite(values).mean())
+    if name in LONG_CHAIN_LOW_COVERAGE:
+        assert coverage < 0.01, (
+            f"{name} 覆盖率已升到 {coverage:.2%}，请更新 docs/verification.md 的例外记录"
+        )
+    else:
+        assert coverage > 0.04, f"{name} 真实数据覆盖率过低：{coverage:.2%}"
+
+
+@pytest.mark.parametrize("level", ["ind_sector", "ind_industry", "ind_subindustry"])
+def test_ind_neutralize_is_orthogonal_for_every_real_level(level, industry_panel):
+    """三个行业层级都要满足：逐日按**当日**标签去均值后，行业内残差和 ≈ 0。"""
+    labels = industry_panel[level]
+    assert float(labels.notna().to_numpy().mean()) > 0.9, f"{level} 覆盖率过低"
+    factor = registry.run_factor("alpha4", industry_panel)
+    resid = ind_neutralize(factor, labels)
+    worst = 0.0
+    for day in resid.index:
+        sums = resid.loc[day].groupby(labels.loc[day]).sum()
+        if sums.size:
+            worst = max(worst, float(np.nanmax(np.abs(sums.to_numpy()))))
+    assert worst < 1e-9, f"{level} 行业内残差和未归零：{worst:.3e}"
+
+
 def test_real_data_time_truncation_consistency(real):
     """真实数据上的 PIT 金标准：全量与截断在 t 处必须逐点完全相等。"""
     panel = real["panel"]

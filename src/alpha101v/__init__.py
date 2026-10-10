@@ -7,9 +7,9 @@
 见 :data:`OPERATORS`；另有**不属于算子面**的逐元素函数层见 :data:`ELEMWISE`
 （论文把它们列为 Functions，见 ``docs/operators.md`` §3.9）。
 
-因子层（M2）当前交付 **4 个试点因子**：:data:`PILOT_FACTORS`
-（``alpha101`` / ``alpha4`` / ``alpha41`` / ``alpha56``），导入本包即自动登记进
-``registry.REGISTRY``，状态一律 ``partial``（``verified`` 需六条门槛，见设计文档 §6.8）。因子层（``factors.py``）当前只含 M2 的 4 个试点因子；全量 101 个是 M3 的工作。
+因子层（M3）交付 **全部 101 个因子**（:data:`ALL_FACTOR_NAMES`），导入本包即自动登记进
+``registry.REGISTRY``；状态只有 ``partial``（结构对照等价）与 ``ambiguous``
+（规范未定，见 ``factors.AMBIGUOUS_FACTORS``）——``verified`` 需六条门槛，见设计文档 §6.8。因子层（``factors.py``）已含全部 101 个因子（论文逐字转写）。
 本包**不含任何来自 GPL 实现的代码**（clean-room，见 ``docs/paper_formulas.md`` 与
 ``tests/test_provenance.py``）。
 """
@@ -17,8 +17,8 @@
 from __future__ import annotations
 
 from . import elemwise, factors, neutralize, operators, panel, registry
-from .elemwise import ELEMWISE, abs_, log, sign, signedpower
-from .factors import PILOT_FACTORS, alpha4, alpha41, alpha56, alpha101
+from .elemwise import ELEMWISE, abs_, log, maximum, minimum, sign, signedpower
+from .factors import ALL_FACTOR_NAMES, PILOT_NAMES, alpha4, alpha41, alpha5, alpha56, alpha101
 from .neutralize import ind_neutralize, neu_industry, neutral
 from .operators import (
     correlation,
@@ -71,9 +71,10 @@ OPERATORS: tuple[str, ...] = (
 )
 
 __all__ = [
+    "ALL_FACTOR_NAMES",
     "ELEMWISE",
     "OPERATORS",
-    "PILOT_FACTORS",
+    "PILOT_NAMES",
     "__version__",
     "alpha4",
     "alpha41",
@@ -85,6 +86,8 @@ __all__ = [
     "abs_",
     "elemwise",
     "log",
+    "maximum",
+    "minimum",
     "sign",
     "signedpower",
     "correlation",

@@ -44,6 +44,16 @@ def test_units_declared_for_every_field():
     assert set(pc.REQUIRED_FIELDS) | set(pc.OPTIONAL_FIELDS) == set(pc.ALL_FIELDS)
 
 
+def test_industry_level_fields_are_accepted_and_exempt_from_numeric_checks():
+    """论文三个 IndClass 层级（`ind_sector/ind_industry/ind_subindustry`）是契约内的非数值字段。"""
+    fields = good_panel(n=30)
+    for name in ("ind_sector", "ind_industry", "ind_subindustry"):
+        fields[name] = pd.DataFrame("银行", index=fields["close"].index, columns=fields["close"].columns)
+    assert pc.validate_panel(fields, min_history=None) == []
+    assert pc.is_non_numeric_field("ind") and pc.is_non_numeric_field("ind_subindustry")
+    assert not pc.is_non_numeric_field("close")
+
+
 def test_good_panel_passes_contract():
     assert pc.validate_panel(good_panel()) == []
     pc.assert_valid_panel(good_panel())

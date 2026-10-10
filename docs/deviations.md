@@ -39,7 +39,7 @@
 
 | # | 论文（L-A）规定 | 本库现状 | 性质 | 影响面 | 处置 |
 |---|---|---|---|---|---|
-| P1 | 非整数天数 `d` **取下整 `floor(d)`**（§3 通式明写） | `_check_window` 对非整数抛 `TypeError` | ❗**偏离**（已判定，待改码） | **40 个因子**（58–99 号，共 229 处非整数窗口） | 改为 `floor(d)`；floor 后 `<1` 仍报错；同步改 `operators.md` §3.8/§4.4 与 `test_a27` |
+| P1 | 非整数天数 `d` **取下整 `floor(d)`**（§3 通式明写） | ✅ **已修复**（M3）：接受实数天数并 `floor`，floor 后 `<1` 报错 | ~~偏离~~ → **一致** | 40 个因子（58–99 号，共 229 处） | 由 `test_a27b` 锁定（含论文真实窗口 `Ts_Rank(close, 7.45404)`） |
 | P2 | `adv{d}` = 平均每日**美元成交额**（dollar volume） | 库内尚无 `adv` 派生（属因子层）；若用股数 `volume` 替代 | ⚠️**近似**（若替代） | **45 个因子** | A 股取 `amount`（元）：`adv20 = sma(amount, 20)`；M3 逐因子登记 |
 | P3 | 使用 `abs`/`log`/`sign`/`signedpower` 四个一元函数 | 20 算子内**不含**（属层设计边界） | ⚠️**覆盖缺口** | **15 个因子** | M2 交付 `elemwise.py`（`operators.md` §1、`paper_formulas.md` §7.6） |
 | P4 | `signedpower(x, a) = x^a` | 未实现 | ⚠️**歧义**（名字暗示保号幂） | 2 个因子（Alpha#1/#84，a=2 无差异） | 待 BRAIN 文档或 vnpy 实现定案 |
@@ -90,20 +90,117 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 
 ---
 
-## 4. 待 M3 生成的《与论文的偏差清单》模板（101 行）
+## 4. 《与论文的偏差清单》（101 行，**由工具生成**）
 
-| 字段 | 取值 |
-|---|---|
-| `factor` | `alpha001` … `alpha101` |
-| `paper_ref` | 论文附录公式编号（如 `Appendix A, eq. (1)`） |
-| `implemented_expr` | 本库实现的算子树（由 AST 导出） |
-| `paper_expr` | 论文公式解析出的算子树 |
-| `classification` | `等价` / `近似` / `偏离` |
-| `differences` | 近似/偏离时的具体差异（少一个 `rank`、`adv20` 用 volume 替代、常量不同…） |
-| `impact` | 差异对数值的预期影响（含是否影响排序） |
-| `status` | `verified` / `partial` / `ambiguous`（与 `registry` 元信息一致） |
+生成命令（可复现）：``python tools/conformance_report.py --table``。
+对照粒度：**算子 / 字段 / 数值字面量**三重集合比对（实现允许引入中间变量与结合律重排）；
+不是完整的数据流同构证明（能力边界见工具文档串与 `docs/verification.md` §1.4）。
 
-生成工具：`tools/conformance_report.py`（**M3 待实现**，见 `tools/README.md`）。
+**当前结论：101/101 等价、0 偏离、0 未实现。**
+
+| 因子 | 分类 | 论文算子多重集 | 实现算子多重集 | 差异 |
+|---|---|---|---|---|
+| alpha1 | 等价 | -×1, <×1, rank×1, signedpower×1, stddev×1, ts_argmax×1 | -×1, <×1, rank×1, signedpower×1, stddev×1, ts_argmax×1 | — |
+| alpha2 | 等价 | *×1, -×1, /×1, correlation×1, delta×1, log×1, neg×1, rank×2 | *×1, -×1, /×1, correlation×1, delta×1, log×1, neg×1, rank×2 | — |
+| alpha3 | 等价 | *×1, correlation×1, neg×1, rank×2 | *×1, correlation×1, neg×1, rank×2 | — |
+| alpha4 | 等价 | *×1, neg×1, rank×1, ts_rank×1 | *×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha5 | 等价 | *×2, -×2, /×1, abs_×1, neg×1, rank×2, ts_sum×1 | *×2, -×2, /×1, abs_×1, neg×1, rank×2, ts_sum×1 | — |
+| alpha6 | 等价 | *×1, correlation×1, neg×1 | *×1, correlation×1, neg×1 | — |
+| alpha7 | 等价 | *×3, <×1, abs_×1, delta×2, neg×2, sign×1, ts_rank×1 | *×3, <×1, abs_×1, delta×2, neg×2, sign×1, ts_rank×1 | — |
+| alpha8 | 等价 | *×3, -×1, delay×1, neg×1, rank×1, ts_sum×4 | *×2, -×1, delay×1, neg×1, rank×1, ts_sum×2 | — |
+| alpha9 | 等价 | *×1, <×2, delta×5, neg×1, ts_max×1, ts_min×1 | *×1, <×2, delta×1, neg×1, ts_max×1, ts_min×1 | — |
+| alpha10 | 等价 | *×1, <×2, delta×5, neg×1, rank×1, ts_max×1, ts_min×1 | *×1, <×2, delta×1, neg×1, rank×1, ts_max×1, ts_min×1 | — |
+| alpha11 | 等价 | *×1, +×1, -×2, delta×1, rank×3, ts_max×1, ts_min×1 | *×1, +×1, -×1, delta×1, rank×3, ts_max×1, ts_min×1 | — |
+| alpha12 | 等价 | *×2, delta×2, neg×1, sign×1 | *×2, delta×2, neg×1, sign×1 | — |
+| alpha13 | 等价 | *×1, covariance×1, neg×1, rank×3 | *×1, covariance×1, neg×1, rank×3 | — |
+| alpha14 | 等价 | *×2, correlation×1, delta×1, neg×1, rank×1 | *×2, correlation×1, delta×1, neg×1, rank×1 | — |
+| alpha15 | 等价 | *×1, correlation×1, neg×1, rank×3, ts_sum×1 | *×1, correlation×1, neg×1, rank×3, ts_sum×1 | — |
+| alpha16 | 等价 | *×1, covariance×1, neg×1, rank×3 | *×1, covariance×1, neg×1, rank×3 | — |
+| alpha17 | 等价 | *×3, /×1, delta×2, neg×1, rank×3, ts_rank×2 | *×3, /×1, delta×2, neg×1, rank×3, ts_rank×2 | — |
+| alpha18 | 等价 | *×1, +×2, -×2, abs_×1, correlation×1, neg×1, rank×1, stddev×1 | *×1, +×2, -×2, abs_×1, correlation×1, neg×1, rank×1, stddev×1 | — |
+| alpha19 | 等价 | *×2, +×3, -×1, delay×1, delta×1, neg×1, rank×1, sign×1, ts_sum×1 | *×2, +×3, -×1, delay×1, delta×1, neg×1, rank×1, sign×1, ts_sum×1 | — |
+| alpha20 | 等价 | *×3, -×3, delay×3, neg×1, rank×3 | *×3, -×3, delay×3, neg×1, rank×3 | — |
+| alpha21 | 等价 | *×2, +×1, -×1, /×6, <×3, ==×1, neg×2, stddev×2, ts_sum×4, ||×1 | *×2, +×1, -×1, /×5, <×3, ==×1, neg×2, stddev×2, ts_sum×4, ||×1 | — |
+| alpha22 | 等价 | *×2, correlation×1, delta×1, neg×1, rank×1, stddev×1 | *×2, correlation×1, delta×1, neg×1, rank×1, stddev×1 | — |
+| alpha23 | 等价 | *×1, /×1, <×1, delta×1, neg×1, ts_sum×1 | *×1, /×1, <×1, delta×1, neg×1, ts_sum×1 | — |
+| alpha24 | 等价 | *×2, -×1, /×4, <×1, ==×1, delay×2, delta×3, neg×2, ts_min×1, ts_sum×2, ||×1 | *×2, -×1, /×2, <×1, ==×1, delay×1, delta×2, neg×2, ts_min×1, ts_sum×1, ||×1 | — |
+| alpha25 | 等价 | *×4, -×1, neg×1, rank×1 | *×4, -×1, neg×1, rank×1 | — |
+| alpha26 | 等价 | *×1, correlation×1, neg×1, ts_max×1, ts_rank×2 | *×1, correlation×1, neg×1, ts_max×1, ts_rank×2 | — |
+| alpha27 | 等价 | *×1, /×1, <×1, correlation×1, neg×1, rank×3, ts_sum×1 | *×1, /×1, <×1, correlation×1, neg×1, rank×3, ts_sum×1 | — |
+| alpha28 | 等价 | +×2, -×1, /×1, correlation×1, scale×1 | +×2, -×1, /×1, correlation×1, scale×1 | — |
+| alpha29 | 等价 | *×2, +×1, -×1, delay×1, delta×1, log×1, neg×2, product×1, rank×5, scale×1, ts_min×2, ts_rank×1, ts_sum×1 | *×2, +×1, -×1, delay×1, delta×1, log×1, neg×2, product×1, rank×5, scale×1, ts_min×2, ts_rank×1, ts_sum×1 | — |
+| alpha30 | 等价 | *×1, +×2, -×4, /×1, delay×5, rank×1, sign×3, ts_sum×2 | *×1, +×2, -×4, /×1, delay×5, rank×1, sign×3, ts_sum×2 | — |
+| alpha31 | 等价 | *×2, +×2, correlation×1, decay_linear×1, delta×2, neg×2, rank×6, scale×1, sign×1 | *×2, +×2, correlation×1, decay_linear×1, delta×2, neg×2, rank×6, scale×1, sign×1 | — |
+| alpha32 | 等价 | *×1, +×1, -×1, /×1, correlation×1, delay×1, scale×2, ts_sum×1 | *×1, +×1, -×1, /×1, correlation×1, delay×1, scale×2, ts_sum×1 | — |
+| alpha33 | 等价 | *×1, -×1, /×1, ^×1, neg×1, rank×1 | *×1, -×1, /×1, ^×1, neg×1, rank×1 | — |
+| alpha34 | 等价 | +×1, -×2, /×1, delta×1, rank×3, stddev×2 | +×1, -×2, /×1, delta×1, rank×3, stddev×2 | — |
+| alpha35 | 等价 | *×2, +×1, -×3, ts_rank×3 | *×2, +×1, -×3, ts_rank×3 | — |
+| alpha36 | 等价 | *×6, +×4, -×4, /×1, abs_×1, correlation×2, delay×2, neg×1, rank×5, ts_rank×1, ts_sum×1 | *×6, +×4, -×4, /×1, abs_×1, correlation×2, delay×2, neg×1, rank×5, ts_rank×1, ts_sum×1 | — |
+| alpha37 | 等价 | +×1, -×2, correlation×1, delay×1, rank×2 | +×1, -×2, correlation×1, delay×1, rank×2 | — |
+| alpha38 | 等价 | *×2, /×1, neg×1, rank×2, ts_rank×1 | *×2, /×1, neg×1, rank×2, ts_rank×1 | — |
+| alpha39 | 等价 | *×3, +×1, -×1, /×1, decay_linear×1, delta×1, neg×1, rank×3, ts_sum×1 | *×3, +×1, -×1, /×1, decay_linear×1, delta×1, neg×1, rank×3, ts_sum×1 | — |
+| alpha40 | 等价 | *×2, correlation×1, neg×1, rank×1, stddev×1 | *×2, correlation×1, neg×1, rank×1, stddev×1 | — |
+| alpha41 | 等价 | *×1, -×1, ^×1 | *×1, -×1, ^×1 | — |
+| alpha42 | 等价 | +×1, -×1, /×1, rank×2 | +×1, -×1, /×1, rank×2 | — |
+| alpha43 | 等价 | *×2, /×1, delta×1, neg×1, ts_rank×2 | *×2, /×1, delta×1, neg×1, ts_rank×2 | — |
+| alpha44 | 等价 | *×1, correlation×1, neg×1, rank×1 | *×1, correlation×1, neg×1, rank×1 | — |
+| alpha45 | 等价 | *×3, /×1, correlation×2, delay×1, neg×1, rank×2, ts_sum×3 | *×3, /×1, correlation×2, delay×1, neg×1, rank×2, ts_sum×3 | — |
+| alpha46 | 等价 | *×3, -×7, /×4, <×2, delay×7, neg×2 | *×3, -×4, /×2, <×2, delay×4, neg×2 | — |
+| alpha47 | 等价 | *×3, -×3, /×4, delay×1, rank×3, ts_sum×1 | *×3, -×3, /×4, delay×1, rank×3, ts_sum×1 | — |
+| alpha48 | 等价 | *×1, /×3, ^×1, correlation×1, delay×2, delta×4, ind_neutralize×1, ts_sum×1 | *×1, /×3, ^×1, correlation×1, delay×2, delta×4, ind_neutralize×1, ts_sum×1 | — |
+| alpha49 | 等价 | *×3, -×4, /×2, <×1, delay×4, neg×2 | *×3, -×4, /×2, <×1, delay×4, neg×2 | — |
+| alpha50 | 等价 | *×1, correlation×1, neg×1, rank×3, ts_max×1 | *×1, correlation×1, neg×1, rank×3, ts_max×1 | — |
+| alpha51 | 等价 | *×3, -×4, /×2, <×1, delay×4, neg×2 | *×3, -×4, /×2, <×1, delay×4, neg×2 | — |
+| alpha52 | 等价 | *×3, +×1, -×1, /×1, delay×1, neg×1, rank×1, ts_min×2, ts_rank×1, ts_sum×2 | *×3, +×1, -×1, /×1, delay×1, neg×1, rank×1, ts_min×2, ts_rank×1, ts_sum×2 | — |
+| alpha53 | 等价 | *×1, -×4, /×1, delta×1, neg×1 | *×1, -×4, /×1, delta×1, neg×1 | — |
+| alpha54 | 等价 | *×3, -×2, /×1, ^×2, neg×1 | *×3, -×2, /×1, ^×2, neg×1 | — |
+| alpha55 | 等价 | *×1, -×2, /×1, correlation×1, neg×1, rank×2, ts_max×1, ts_min×2 | *×1, -×2, /×1, correlation×1, neg×1, rank×2, ts_max×1, ts_min×2 | — |
+| alpha56 | 等价 | *×3, -×1, /×1, rank×2, ts_sum×3 | *×3, -×1, /×1, rank×2, ts_sum×3 | — |
+| alpha57 | 等价 | *×1, -×2, /×1, decay_linear×1, rank×1, ts_argmax×1 | *×1, -×2, /×1, decay_linear×1, rank×1, ts_argmax×1 | — |
+| alpha58 | 等价 | *×1, correlation×1, decay_linear×1, ind_neutralize×1, neg×1, ts_rank×1 | *×1, correlation×1, decay_linear×1, ind_neutralize×1, neg×1, ts_rank×1 | — |
+| alpha59 | 等价 | *×3, +×1, -×1, correlation×1, decay_linear×1, ind_neutralize×1, neg×1, ts_rank×1 | *×3, +×1, -×1, correlation×1, decay_linear×1, ind_neutralize×1, neg×1, ts_rank×1 | — |
+| alpha60 | 等价 | *×3, -×6, /×1, rank×2, scale×2, ts_argmax×1 | *×3, -×6, /×1, rank×2, scale×2, ts_argmax×1 | — |
+| alpha61 | 等价 | -×1, <×1, correlation×1, rank×2, ts_min×1 | -×1, <×1, correlation×1, rank×2, ts_min×1 | — |
+| alpha62 | 等价 | *×1, +×3, /×1, <×2, correlation×1, neg×1, rank×6, ts_sum×1 | *×1, +×3, /×1, <×2, correlation×1, neg×1, rank×6, ts_sum×1 | — |
+| alpha63 | 等价 | *×3, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, neg×1, rank×2, ts_sum×1 | *×3, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, neg×1, rank×2, ts_sum×1 | — |
+| alpha64 | 等价 | *×5, +×3, -×2, /×1, <×1, correlation×1, delta×1, neg×1, rank×2, ts_sum×2 | *×5, +×3, -×2, /×1, <×1, correlation×1, delta×1, neg×1, rank×2, ts_sum×2 | — |
+| alpha65 | 等价 | *×3, +×1, -×2, <×1, correlation×1, neg×1, rank×2, ts_min×1, ts_sum×1 | *×3, +×1, -×2, <×1, correlation×1, neg×1, rank×2, ts_min×1, ts_sum×1 | — |
+| alpha66 | 等价 | *×3, +×3, -×3, /×2, decay_linear×2, delta×1, neg×1, rank×1, ts_rank×1 | *×3, +×3, -×3, /×2, decay_linear×2, delta×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha67 | 等价 | *×1, -×1, ^×1, correlation×1, ind_neutralize×2, neg×1, rank×2, ts_min×1 | *×1, -×1, ^×1, correlation×1, ind_neutralize×2, neg×1, rank×2, ts_min×1 | — |
+| alpha68 | 等价 | *×3, +×1, -×1, <×1, correlation×1, delta×1, neg×1, rank×3, ts_rank×1 | *×3, +×1, -×1, <×1, correlation×1, delta×1, neg×1, rank×3, ts_rank×1 | — |
+| alpha69 | 等价 | *×3, +×1, -×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, ts_max×1, ts_rank×1 | *×3, +×1, -×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, ts_max×1, ts_rank×1 | — |
+| alpha70 | 等价 | *×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, ts_rank×1 | *×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha71 | 等价 | +×2, -×1, ^×1, correlation×1, decay_linear×2, maximum×1, rank×1, ts_rank×4 | +×2, -×1, ^×1, correlation×1, decay_linear×2, maximum×1, rank×1, ts_rank×4 | — |
+| alpha72 | 等价 | +×1, /×2, correlation×2, decay_linear×2, rank×2, ts_rank×2 | +×1, /×2, correlation×2, decay_linear×2, rank×2, ts_rank×2 | — |
+| alpha73 | 等价 | *×6, +×2, -×2, /×1, decay_linear×2, delta×2, maximum×1, neg×2, rank×1, ts_rank×1 | *×4, +×1, -×1, /×1, decay_linear×2, delta×2, maximum×1, neg×2, rank×1, ts_rank×1 | — |
+| alpha74 | 等价 | *×3, +×1, -×1, <×1, correlation×2, neg×1, rank×4, ts_sum×1 | *×3, +×1, -×1, <×1, correlation×2, neg×1, rank×4, ts_sum×1 | — |
+| alpha75 | 等价 | <×1, correlation×2, rank×4 | <×1, correlation×2, rank×4 | — |
+| alpha76 | 等价 | *×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, maximum×1, neg×1, rank×1, ts_rank×2 | *×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, maximum×1, neg×1, rank×1, ts_rank×2 | — |
+| alpha77 | 等价 | +×4, -×1, /×2, correlation×1, decay_linear×2, minimum×1, rank×2 | +×4, -×1, /×2, correlation×1, decay_linear×2, minimum×1, rank×2 | — |
+| alpha78 | 等价 | *×2, +×1, -×1, ^×1, correlation×2, rank×4, ts_sum×2 | *×2, +×1, -×1, ^×1, correlation×2, rank×4, ts_sum×2 | — |
+| alpha79 | 等价 | *×2, +×1, -×1, <×1, correlation×1, delta×1, ind_neutralize×1, rank×2, ts_rank×2 | *×2, +×1, -×1, <×1, correlation×1, delta×1, ind_neutralize×1, rank×2, ts_rank×2 | — |
+| alpha80 | 等价 | *×3, +×1, -×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, sign×1, ts_rank×1 | *×3, +×1, -×1, ^×1, correlation×1, delta×1, ind_neutralize×1, neg×1, rank×1, sign×1, ts_rank×1 | — |
+| alpha81 | 等价 | *×1, <×1, ^×1, correlation×2, log×1, neg×1, product×1, rank×6, ts_sum×1 | *×1, <×1, ^×1, correlation×2, log×1, neg×1, product×1, rank×6, ts_sum×1 | — |
+| alpha82 | 等价 | *×3, +×1, -×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, minimum×1, neg×1, rank×1, ts_rank×1 | *×3, +×1, -×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, minimum×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha83 | 等价 | *×1, -×3, /×6, delay×1, rank×3, ts_sum×2 | *×1, -×2, /×4, delay×1, rank×3, ts_sum×1 | — |
+| alpha84 | 等价 | -×1, delta×1, signedpower×1, ts_max×1, ts_rank×1 | -×1, delta×1, signedpower×1, ts_max×1, ts_rank×1 | — |
+| alpha85 | 等价 | *×2, +×2, -×1, /×1, ^×1, correlation×2, rank×2, ts_rank×2 | *×2, +×2, -×1, /×1, ^×1, correlation×2, rank×2, ts_rank×2 | — |
+| alpha86 | 等价 | *×1, +×2, -×1, <×1, correlation×1, neg×1, rank×1, ts_rank×1, ts_sum×1 | *×1, +×2, -×1, <×1, correlation×1, neg×1, rank×1, ts_rank×1, ts_sum×1 | — |
+| alpha87 | 等价 | *×3, +×1, -×1, abs_×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, maximum×1, neg×1, rank×1, ts_rank×1 | *×3, +×1, -×1, abs_×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, maximum×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha88 | 等价 | +×2, -×1, correlation×1, decay_linear×2, minimum×1, rank×5, ts_rank×3 | +×2, -×1, correlation×1, decay_linear×2, minimum×1, rank×5, ts_rank×3 | — |
+| alpha89 | 等价 | *×2, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, ts_rank×2 | *×2, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, ts_rank×2 | — |
+| alpha90 | 等价 | *×1, -×1, ^×1, correlation×1, ind_neutralize×1, neg×1, rank×1, ts_max×1, ts_rank×1 | *×1, -×1, ^×1, correlation×1, ind_neutralize×1, neg×1, rank×1, ts_max×1, ts_rank×1 | — |
+| alpha91 | 等价 | *×1, -×1, correlation×2, decay_linear×3, ind_neutralize×1, neg×1, rank×1, ts_rank×1 | *×1, -×1, correlation×2, decay_linear×3, ind_neutralize×1, neg×1, rank×1, ts_rank×1 | — |
+| alpha92 | 等价 | +×3, /×1, <×1, correlation×1, decay_linear×2, minimum×1, rank×2, ts_rank×2 | +×3, /×1, <×1, correlation×1, decay_linear×2, minimum×1, rank×2, ts_rank×2 | — |
+| alpha93 | 等价 | *×2, +×1, -×1, /×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, rank×1, ts_rank×1 | *×2, +×1, -×1, /×1, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, rank×1, ts_rank×1 | — |
+| alpha94 | 等价 | *×1, -×1, ^×1, correlation×1, neg×1, rank×1, ts_min×1, ts_rank×3 | *×1, -×1, ^×1, correlation×1, neg×1, rank×1, ts_min×1, ts_rank×3 | — |
+| alpha95 | 等价 | +×1, -×1, /×1, <×1, ^×1, correlation×1, rank×2, ts_min×1, ts_rank×1, ts_sum×2 | +×1, -×1, /×1, <×1, ^×1, correlation×1, rank×2, ts_min×1, ts_rank×1, ts_sum×2 | — |
+| alpha96 | 等价 | *×1, correlation×2, decay_linear×2, maximum×1, neg×1, rank×2, ts_argmax×1, ts_rank×4 | *×1, correlation×2, decay_linear×2, maximum×1, neg×1, rank×2, ts_argmax×1, ts_rank×4 | — |
+| alpha97 | 等价 | *×3, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, neg×1, rank×1, ts_rank×4 | *×3, +×1, -×2, correlation×1, decay_linear×2, delta×1, ind_neutralize×1, neg×1, rank×1, ts_rank×4 | — |
+| alpha98 | 等价 | -×1, correlation×2, decay_linear×2, rank×4, ts_argmin×1, ts_rank×1, ts_sum×1 | -×1, correlation×2, decay_linear×2, rank×4, ts_argmin×1, ts_rank×1, ts_sum×1 | — |
+| alpha99 | 等价 | *×1, +×1, /×1, <×1, correlation×2, neg×1, rank×2, ts_sum×2 | *×1, +×1, /×1, <×1, correlation×2, neg×1, rank×2, ts_sum×2 | — |
+| alpha100 | 等价 | *×4, -×7, /×2, correlation×1, ind_neutralize×3, rank×3, scale×2, ts_argmin×1 | *×4, -×7, /×2, correlation×1, ind_neutralize×3, rank×3, scale×2, ts_argmin×1 | — |
+| alpha101 | 等价 | +×1, -×2, /×1 | +×1, -×2, /×1 | — |
 
 ## 5. 变更记录
 
@@ -111,4 +208,5 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 7 项与原 GPL 实现的偏差、设计文档勘误 4 条、vnpy 差异 5 项待复核、101 行清单模板 |
 | **v0.3** | 2026-10-09 | §3 重写为**算子层已实地复核**：24 项对拍（18 一致 + 6 归因 + 0 待查），差异表 V1–V10（含 `decay_linear` 方向相反这一 22 因子最高风险项、`ts_argmax`/`ts_rank` 与本库一致、vnpy 不支持非整数窗口、因子级差分缺 talib/math_function） |
+| **v0.4** | 2026-10-09 | M3：§1.2 的 P1（非整数窗口 `floor(d)`）标记为**已修复**；§4 的 101 行模板替换为 `tools/conformance_report.py` **生成的实测清单**（101/101 等价） |
 | v0.2 | 2026-10-09 | 新增 §1.2「与论文原文（L-A）的算子层偏差」：P1 非整数窗口 `floor(d)`（40 因子，**唯一需改码项**）、P2 `adv{d}`=美元成交额（45 因子）、P3 逐元素层缺口（15 因子）、P4 `signedpower`、P5 `decay_linear` 权重方向（22 因子）、P6 `ts_argmax` 基准（6 因子）、P7 `scale` 轴向（6 因子）；§1 拆为 1.1（GPL）/1.2（论文） |
