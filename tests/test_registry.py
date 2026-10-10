@@ -47,7 +47,8 @@ def test_registry_holds_all_101_factors():
     assert set(registry.REGISTRY) == {f"alpha{n}" for n in range(1, 102)}
     report = registry.status_report()
     assert list(report.columns) == ["factor", "status", "fields", "paper_ref", "notes"]
-    assert set(report["status"]) == {"partial", "ambiguous"}
+    # L-B（BRAIN 官方文档）定案后 ambiguous 清零，只剩 partial；verified 仍待 M5 golden 快照
+    assert set(report["status"]) == {"partial"}
     assert (report["paper_ref"].str.contains("Appendix A")).all()
 
 

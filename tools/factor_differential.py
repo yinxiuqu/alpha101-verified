@@ -17,6 +17,10 @@
                              ⇒ 对拍时把面板 ``amount`` 喂成 ``volume``
 ``非整数窗口``               论文规定 ``floor(d)``；vnpy 用**四舍五入**（实测其注释里的
                              表达式：7.89291→8、2.72412→3、4.79344→5）⇒ 对拍时改为 round
+``argmax 基准``              本库默认 = BRAIN 官方 `days_ago`（今天=0）；vnpy = `arg_max()+1`
+                             （自窗口起点 1-based）⇒ 对拍时切到 `window_start`
+``中缀 `^` 的口径``           本库默认 = BRAIN `power`；vnpy 的 `pow1/pow2` 是**保号幂**
+                             ⇒ 对拍时把 `_pow` 换成 `signedpower(preserve_sign=True)`
 ``预热期``                   本库严格 NaN、vnpy 多处 ``min_samples=1``/``fill_null(0)``
                              ⇒ **只比较两侧都有限的格子**，并单独报告覆盖率
 ============================ ==============================================
@@ -268,8 +272,14 @@ def apply_alignments(panel: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """按 §6.4 做语义归一化：patch 因子层用到的算子默认值 + 面板口径。"""
     from alpha101v import factors, operators
 
+    from alpha101v.elemwise import signedpower  # noqa: PLC0415
+
     operators._floor_days = _round_days  # noqa: SLF001   （论文 floor vs vnpy round）
     factors.rank = functools.partial(factors.rank, method="min")            # type: ignore[assignment]
+    # 本库默认已按 BRAIN 定案（days_ago 基准 / power 语义），这里切回 vnpy 的口径再比
+    factors.ts_argmax = functools.partial(factors.ts_argmax, basis="window_start")   # type: ignore[assignment]
+    factors.ts_argmin = functools.partial(factors.ts_argmin, basis="window_start")   # type: ignore[assignment]
+    factors._pow = lambda base, exponent: signedpower(base, exponent, preserve_sign=True)  # type: ignore[assignment]
     factors.decay_linear = functools.partial(factors.decay_linear, order="oldest_first")  # type: ignore[assignment]
     factors.stddev = functools.partial(factors.stddev, ddof=0)              # type: ignore[assignment]
 

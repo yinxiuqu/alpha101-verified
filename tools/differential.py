@@ -176,9 +176,10 @@ def build_checks() -> list[Check]:
     ))
     checks.append(Check("ts_min(x,5)", ops.ts_min(close, d), ref_ts(ts.ts_min, ref_close, window=d), first_row=d - 1))
     checks.append(Check("ts_max(x,5)", ops.ts_max(close, d), ref_ts(ts.ts_max, ref_close, window=d), first_row=d - 1))
-    checks.append(Check("ts_argmax(x,5)", ops.ts_argmax(close, d), ref_ts(ts.ts_argmax, ref_close, window=d), first_row=d - 1,
+    # 本库默认已是 BRAIN 的 days_ago（今天=0）；vnpy 是 arg_max()+1（自窗口起点）⇒ 对拍时显式对齐
+    checks.append(Check("ts_argmax(x,5)", ops.ts_argmax(close, d, basis="window_start"), ref_ts(ts.ts_argmax, ref_close, window=d), first_row=d - 1,
                         note="★ 两边都是「自窗口起点 1-based」"))
-    checks.append(Check("ts_argmin(x,5)", ops.ts_argmin(close, d), ref_ts(ts.ts_argmin, ref_close, window=d), first_row=d - 1))
+    checks.append(Check("ts_argmin(x,5)", ops.ts_argmin(close, d, basis="window_start"), ref_ts(ts.ts_argmin, ref_close, window=d), first_row=d - 1))
     checks.append(Check("ts_rank(x,5,pct=True)", ops.ts_rank(close, d), ref_ts(ts.ts_rank, ref_close, window=d), first_row=d - 1))
     checks.append(Check("correlation(x,y,5)", ops.correlation(close, other, d), ref_ts(ts.ts_corr, ref_close, ref_other, window=d), first_row=d - 1))
     checks.append(Check(

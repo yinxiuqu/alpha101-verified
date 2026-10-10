@@ -27,8 +27,10 @@ python tools/factor_differential.py --panel real --alphas 13,15,16   # 真实连
 ```
 
 对拍范围 82/101：vnpy 未实现的 **19 个**（18 个含 `IndNeutralize` + `alpha56`）**结构上无法差分**。
-语义归一化开关（`docs/verification.md` §1.5 有实测依据）：rank 并列、decay 方向、`stddev` ddof、
-`adv{d}` 口径（把 `amount` 喂成 `volume`）、非整数窗口（论文 floor vs vnpy 四舍五入）、预热期。
+语义归一化开关（`docs/verification.md` §1.5 有实测依据）：rank 并列（vnpy=min）、decay 方向（vnpy=oldest_first，
+**与 BRAIN 官方相反**）、`stddev` ddof（vnpy=0）、`adv{d}` 口径（把 `amount` 喂成 `volume`）、
+非整数窗口（论文 floor vs vnpy 四舍五入）、**argmax 基准**（本库按 BRAIN 的 `days_ago`，对拍切回 vnpy 的 `window_start`）、
+**中缀 `^` 口径**（本库按 BRAIN 的 `power`，对拍切回 vnpy 的保号幂）、预热期。
 
 ### 规范对照（M3）
 

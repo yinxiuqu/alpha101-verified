@@ -211,6 +211,12 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 | V13 | vnpy 对**非整数窗口四舍五入**（7.89291→8、2.72412→3、4.79344→5） | 约 23 个可比因子窗口差 1 天 | 本库按论文 `floor(d)`；对拍时按 vnpy 的 round 对齐后比较 |
 | V14 | vnpy 的 `adv{d}` 用 `ts_mean(volume, d)`（股数），论文是**美元成交额** | 45 个因子 | 本库用 `amount`；对拍时把面板 `amount` 喂成 `volume` 对齐 |
 | V15 | vnpy 的 `less/greater` 用 polars 横向 min/max（**null 传播**）、`pow2` 负底数+非整数指数返回 **0** | NaN 区域 | 本库 `fmin/fmax`（NaN 视为缺失）、保号幂；差异只体现在覆盖率（§1.5） |
+| V16 | vnpy 的 `ts_argmax`/`ts_argmin` = `arg_max()+1`（**自窗口起点 1-based**），而 BRAIN 官方是 **`days_ago`（今天=0）** | 6 个因子（1/57/60/96/98/100） | 本库默认按 BRAIN（`docs/operators.md` §3.3）；差分对拍时切 `basis="window_start"` 与 vnpy 对齐 |
+| V17 | vnpy 的 `pow1`/`pow2` 是**保号幂**（负底数 → `−|x|^y`），BRAIN 的 `power` 对整数指数给数学结果（`+x²`） | alpha48 的 `Σ((Δclose/delay)^2)` 会翻号 | 本库默认按 BRAIN（`elemwise.power`）；差分对齐时用 `signedpower(preserve_sign=True)` |
+| V18 | vnpy 的 `ts_decay_linear` 权重方向 = **最老权重最大**，BRAIN 官方是「近期权重大」 | 22 个 decay 因子 | 本库默认按 BRAIN；差分对齐时开 `order="oldest_first"` |
+| V19 | **`rank`/`ts_rank` 归一化区间**：BRAIN 完整文档给 `(名次−1)/(n−1) ∈ [0,1]`（最低=0.0、最高=1.0），本库与 vnpy 都是 `名次/n ∈ (0,1]` | **全部 101 个因子**（`rank` 167 处、`ts_rank` 62 处） | ⏳ **待落地**（下一里程碑） |
+| V20 | **`ts_std_dev` 的 ddof**：BRAIN 算例除以 **n**（`0.001/5`）⇒ **ddof=0**；本库默认 `ddof=1` | 8 个含 `stddev` 的因子 + `covariance` | ⏳ **待落地** |
+| V21 | **`ts_decay_linear` 缺失值**：BRAIN 默认 `dense=false`（**稀疏：NaN 当 0**，分母仍 `1+…+d`）；本库严格整窗有效否则 NaN | 22 个 decay 因子 | ⏳ **待落地**（需与「绝不填 NaN」契约显式二选一） |
 
 ## 5. 变更记录
 
@@ -218,6 +224,8 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 7 项与原 GPL 实现的偏差、设计文档勘误 4 条、vnpy 差异 5 项待复核、101 行清单模板 |
 | **v0.3** | 2026-10-09 | §3 重写为**算子层已实地复核**：24 项对拍（18 一致 + 6 归因 + 0 待查），差异表 V1–V10（含 `decay_linear` 方向相反这一 22 因子最高风险项、`ts_argmax`/`ts_rank` 与本库一致、vnpy 不支持非整数窗口、因子级差分缺 talib/math_function） |
-| **v0.5** | 2026-10-10 | M4：新增 §3.2（V11–V15：vnpy 未实现的 19 个、`quesval2` 取反、窗口 round vs floor、`adv` 口径、min/max 与 pow2 的 NaN/0 策略）；因子级对拍 82/82 已判定（0 待查） |
+| **v0.7** | 2026-10-10 | **BRAIN 完整文档（API 级）入库**：§3.2 追加 V19–V21（归一化区间 / ddof / 稀疏 decay），均已由官方算例定案、**待落地** |
+| v0.6 | 2026-10-10 | **L-B 定案**：§3.2 追加 V16–V18（vnpy 的 argmax 基准、`pow` 保号、decay 方向都与 BRAIN 官方文档不同）⇒ 三条「vnpy 差异」现在都有了官方依据可判 |
+| v0.5 | 2026-10-10 | M4：新增 §3.2（V11–V15：vnpy 未实现的 19 个、`quesval2` 取反、窗口 round vs floor、`adv` 口径、min/max 与 pow2 的 NaN/0 策略）；因子级对拍 82/82 已判定（0 待查） |
 | v0.4 | 2026-10-09 | M3：§1.2 的 P1（非整数窗口 `floor(d)`）标记为**已修复**；§4 的 101 行模板替换为 `tools/conformance_report.py` **生成的实测清单**（101/101 等价） |
 | v0.2 | 2026-10-09 | 新增 §1.2「与论文原文（L-A）的算子层偏差」：P1 非整数窗口 `floor(d)`（40 因子，**唯一需改码项**）、P2 `adv{d}`=美元成交额（45 因子）、P3 逐元素层缺口（15 因子）、P4 `signedpower`、P5 `decay_linear` 权重方向（22 因子）、P6 `ts_argmax` 基准（6 因子）、P7 `scale` 轴向（6 因子）；§1 拆为 1.1（GPL）/1.2（论文） |

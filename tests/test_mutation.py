@@ -88,8 +88,8 @@ MUTATIONS: tuple[Mutation, ...] = (
         anchor="    return float(np.argmax(window_values) + 1)",
         replacement="    return float(np.argmax(window_values))",
         targets=(TEST_OPERATORS,),
-        catcher="test_a12_ts_argmax_default_basis_is_window_start",
-        rationale="§8.4 行 4：ts_argmax 去掉 +1，自窗口起点基准变成 0-based",
+        catcher="test_a12_ts_argmax_default_basis_is_days_ago",
+        rationale="§8.4 行 4：ts_argmax 去掉 +1 ⇒ 两个基准（自起点 1-based / BRAIN 距今 0 基）整体错位 1",
     ),
     Mutation(
         id="m5_stddev_ddof_zero",

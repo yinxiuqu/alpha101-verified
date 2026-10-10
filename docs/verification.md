@@ -19,8 +19,8 @@
 | 指标 | 结果 |
 |---|---|
 | 算子数 | **20/20**（16 时序/截面 + 1 构件 + 3 中性化） |
-| 测试总数 | **646**（13 个测试文件，含变异测试、差分包装、规范对照、因子级差分与真实数据端到端） |
-| 结果 | **646 passed / 0 failed**（约 15.5 分钟；其中因子级差分门禁约 11 分钟、101 因子契约/不变量约 4.5 分钟、真实数据约 3.5 分钟） |
+| 测试总数 | **648**（13 个测试文件，含变异测试、差分包装、规范对照、因子级差分与真实数据端到端） |
+| 结果 | **648 passed / 0 failed**（约 16 分钟；其中因子级差分门禁约 11 分钟、101 因子契约/不变量约 4.5 分钟、真实数据约 3.5 分钟） |
 | 数值容差 | 与权威实现对拍 `rtol = 1e-10`（statsmodels 残差、pandas rolling、scipy `rankdata`） |
 | 失败即停 | 本层未 100% 通过前不得进入因子实现（§10.4 第 6 条） |
 
@@ -29,7 +29,7 @@
 | 文件 | 收集用例数 | 覆盖 |
 |---|---|---|
 | `tests/test_operators.py` | 57 | §8 全部用例：A 组 28 项、B 组 8 项、中性化组 15 项 + API 面/契约 |
-| `tests/test_elemwise.py` | 17 | 论文 4 个一元函数（`abs`/`log`/`sign`/`signedpower`），覆盖 15 个因子 |
+| `tests/test_elemwise.py` | 21 | 逐元素层 7 个函数（`abs`/`log`/`sign`/**`power`**/`signedpower`/`min`/`max`），含 BRAIN `power` 与 `signed_power` 的语义分野 |
 | `tests/test_factors.py` | 43 | M2 的 5 个试点因子：封闭解 / 独立第二实现 / L2 算子调用结构 / L4 不变量 |
 | `tests/test_factors_all.py` | 306 | **M3 全量 101 因子**：注册完整性、可算不产 ±inf、入参不可变、**时间截断一致性**、L2 对照门禁 |
 | `tests/test_adjust.py` | 11 | 复权：参考价口径、hfq 因果 vs qfq 非因果、只缩放价格字段 |
@@ -135,7 +135,7 @@ M2/M3 之前先把**算子口径**与第二实现对齐（设计文档 §6.4）�
 | 项 | 结果 |
 |---|---|
 | 因子实现 | **101/101**（`src/alpha101v/factors.py`，论文逐字转写，每个函数 docstring 保留原文一行） |
-| 状态分布 | `partial` **74** / `ambiguous` **27** / `verified` **0**（`verified` 需六条门槛，M4/M5 未完成） |
+| 状态分布（M3 快照） | `partial` 74 / `ambiguous` 27 / `verified` 0 —— ⚠️ **该快照已被 §1.6 更新**：2026-10-10 的 L-B 定案把 27 个 `ambiguous` 清零，现为 **`partial` 101 / `ambiguous` 0 / `verified` 0** |
 | **L2 规范对照** | ✅ **101/101 等价**（`tools/conformance_report.py`：算子／字段／字面量三重对照，0 偏离） |
 | L4 不变量（全量） | ✅ 101 个因子全部通过：可算不产 ±inf、入参不可变、**时间截断一致性** |
 | 复权（数据前置） | ✅ 见 §1.3 与 `docs/deviations.md` §1.2 P1；除权日假跳空消除（35.11% → 7.60%） |
@@ -144,11 +144,9 @@ M2/M3 之前先把**算子口径**与第二实现对齐（设计文档 §6.4）�
 pandas 会返回 ±inf（违反本库「分母为 0 ⇒ NaN」的承诺），已掩为 NaN 并补回归用例
 （`tests/test_operators.py::test_a20b_...`）；vnpy 的 `ts_corr` 也显式把 infinite 置 null，两边一致。
 
-**ambiguous 的 27 个因子**（规范本身未定且改变数值，设计文档 §9 R2 要求不得标 `verified`）：
-
-* `decay_linear` 权重方向未定案 → **22 个因子**（与 vnpy 相反，BRAIN 文案未取得）；
-* `ts_argmax`/`ts_argmin` 基准未定案 → 6 个（论文只写 "which day"）；
-* `^` 语义（论文字面 `x^a` vs 保号幂）产生实质差异 → 2 个（alpha48、alpha90）。
+**ambiguous 的 27 个因子 → 已于 2026-10-10 全部定案（L-B 官方文档，见 §1.6）**：
+`decay_linear` 方向 22 个、`ts_argmax`/`ts_argmin` 基准 6 个、中缀 `^` 语义 2 个（去重 27）。
+定案后 `ambiguous` 清零，101 个因子一律 `partial`。
 
 ### 1.5 M4：因子级差分对拍（2026-10-10）
 
@@ -198,6 +196,42 @@ rank 值整体平移。判定规则：所有不一致格子都落在「当日有
 **诚实的边界**：只有 alpha45 逐算子复算过，其余 13 个属于「同机制 + 量级签名（不一致格数 0.04%~74%、
 \|Δ\| 为 1/n 量级）」的推断。彻底闭环需要的不是继续对齐口径，而是**平局可判定**的比较方式
 （例如两侧都把中间量量化到同一网格后再排名）——列为后续工作。
+
+### 1.6 L-B：WorldQuant BRAIN 官方算子文档入库（2026-10-10，M4 后续）
+
+**来源**：BRAIN 平台 `learn/operators` 页面打印件 11 页（sha256 `8a20029d93d9ecd8…`，
+打印于 2026-10-10 21:07），本地存于 gitignored 的 `refs/`，**不入库**（登录墙内的专有文档）。
+
+**它定案了什么**（原先 27 个 `ambiguous` 因子的三条歧义，原文引文见 `docs/operators.md` §3.13）：
+
+| 议题 | BRAIN 原文要点 | 处置 |
+|---|---|---|
+| `ts_arg_max`/`ts_arg_min` 基准 | "If **today's value is the maximum, returns 0**" ⇒ `days_ago` | **默认翻转**为 `days_ago`（原默认 1-based 自窗口起点与官方相反）；6 个因子（1/57/60/96/98/100）取值随之改变 |
+| `ts_decay_linear` 方向 | "averaging **recent** values and reducing the impact of **older** data" | 本库默认 `recent_first` **正确**；22 个因子定案 |
+| 中缀 `^` | `power`（负底数 + 非整数指数**丢符号**）与 `signed_power`（保号）是两个算子 | 论文 `^` → 新增的 `elemwise.power`；**alpha48 修复**（负收益平方得正）；alpha90 两读法同值 |
+
+**它同时印证了本库既有决策**（无需改码）：`scale` 逐日截面 `Σ|x|=k`（且确认 BRAIN 另有 `ts_scale`）、
+`group_neutralize` = 组内减去组均值、`sign` 遇 NaN 返回 NaN、`log` 面向正值、
+`add/multiply/subtract` 默认 `filter=false` ⇒ 算术不吞 NaN、`min/max` 至少两个输入（逐元素）。
+
+**状态影响**：`ambiguous` **27 → 0**，101 个因子一律 `partial`；`verified` 仍为 **0/101**
+（六条门槛只剩 L5 golden 快照）。因子级差分的语义归一化新增两条对齐开关
+（argmax 基准、`pow` 口径），对拍结果不变（64 一致 + 18 已归因 + 0 待查）⇒ 说明差异**只在口径选择**，
+不在数值实现。
+
+**API 级完整文档（2026-10-10 补充）**：打印件只有首行描述，随后用会话凭据抓取了完整文档
+（`GET /operators/{name}`，65/66 个算子有正文，本地语料 `refs/brain_operator_docs.md`）。
+完整正文里的**官方算例**又定案了三处默认口径差异（`docs/operators.md` §3.13.3）：
+
+1. `rank`/`ts_rank` 归一化是 **[0,1] 闭区间 `(名次−1)/(n−1)`**（本库与 vnpy 都取 `(0,1]` 的 `名次/n`）⇒ 影响**全部 101 个因子**；
+2. `ts_std_dev` 算例除以 n ⇒ **ddof=0**（本库默认 1）⇒ 8 个因子；
+3. `ts_decay_linear` 默认**稀疏模式（NaN 当 0）**（本库严格整窗）⇒ 22 个因子。
+
+这三处**已定案但尚未落地**（会改变因子取值，需连同差分对齐与测试一起做），已记入
+`docs/deviations.md` §3.2 V19–V21 与 `docs/operators.md` §7，**不在本轮声称完成**。
+
+**文档也没给出的**：`dense=true` 分支、`min/max` 的 NaN 口径、滚动算子 `min_periods`、
+`if_else` 条件为 NULL 的分支 —— 均为库级约定，本库显式决策并测试（§3.12）。
 
 ## 2. 六层协议状态
 
@@ -283,7 +317,7 @@ m7 由「预热期必须 NaN」断言抓住，而设计文档 §8.4 归因的「
 ```bash
 PY=/home/yinxiuqu/anaconda3/envs/qa/bin/python
 
-$PY -m pytest -q                                   # 全量 646 项（真实数据 35 项在无库时自动跳过）
+$PY -m pytest -q                                   # 全量 648 项（真实数据 35 项在无库时自动跳过）
 $PY -m pytest tests/test_operators.py -q           # M1 闸门（54 项，约 8 秒）
 $PY -m pytest tests/test_mutation.py -q            # 变异测试（8 项，约 2 分钟）
 $PY -m pytest tests/test_provenance.py -q          # 许可/依赖机械守卫
@@ -297,6 +331,8 @@ CI（`.github/workflows/ci.yml`）把上述四项拆成独立步骤，并在 **p
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：L1 20/20 与 219 项测试结果、六层状态、L4 不变量与 7/7 变异结果、8 项未验证事项 |
-| **v0.3** | 2026-10-09 | 新增 §1.2 **算子层差分对拍**（24 项：18 一致 + 6 归因 + 0 待查）；更新 §2 的 L3 行为「算子层已做」、§4 第 3 项、测试总数 219→277（新增 `test_elemwise`/`test_factors`/`test_differential`） |
+| **v0.6** | 2026-10-10 | 追加 **API 级完整文档**：65 个算子正文入库；新定案 3 处默认口径差异（归一化区间 / ddof / 稀疏 decay）并记为待办；测试数 648 |
+| v0.5 | 2026-10-10 | **L-B 官方算子文档入库**：新增 §1.6（三处歧义定案 + 与本库既有决策的相互印证 + 文档未展开项）；§1.4 的「27 个 ambiguous」更新为已定案清零；argmax 默认翻转与 `elemwise.power` 新增（alpha48 修复） |
+| v0.3 | 2026-10-09 | 新增 §1.2 **算子层差分对拍**（24 项：18 一致 + 6 归因 + 0 待查）；更新 §2 的 L3 行为「算子层已做」、§4 第 3 项、测试总数 219→277（新增 `test_elemwise`/`test_factors`/`test_differential`） |
 | **v0.4** | 2026-10-09 | 新增 §1.3 **真实 A 股端到端**（359 交易日 × 120 只：契约通过、vwap 自洽 99.86%、行业覆盖 98.0%、5 因子零 inf、PIT 中性化残差和 3.4e-15）与 3 条数据口径限制（**未复权**、0.14% vwap 越界、市值口径待定）；测试总数 277→297；§4 第 7 项改为「部分完成」 |
 | v0.2 | 2026-10-09 | 新增 §1.1 规范入库校验（论文 101/101 公式、0 条括号不平衡、与设计文档 §3.2 依赖表 5/5 一致）；更新 §4 第 2 项（L2 基准文本已就位） |

@@ -38,10 +38,10 @@ import pandas as pd
 
 from .operators import _as_frame, _prep
 
-__all__ = ["ELEMWISE", "abs_", "log", "maximum", "minimum", "sign", "signedpower"]
+__all__ = ["ELEMWISE", "abs_", "log", "maximum", "minimum", "power", "sign", "signedpower"]
 
 #: 逐元素层的公开函数面（**与 20 算子面互不相交**，见模块文档串）。
-ELEMWISE: tuple[str, ...] = ("abs_", "log", "maximum", "minimum", "sign", "signedpower")
+ELEMWISE: tuple[str, ...] = ("abs_", "log", "maximum", "minimum", "power", "sign", "signedpower")
 
 _NONFINITE_RESULT_POLICY = "结果非有限（含 0 的负次幂）→ NaN，不产生 ±inf"
 
@@ -148,6 +148,33 @@ def sign(df: pd.DataFrame) -> pd.DataFrame:
     """符号函数：``-1 / 0 / +1``，``sign(0) = 0``；NaN 保持 NaN。"""
     frame, values = _values(df)
     return _wrap(np.sign(values), frame)
+
+
+def power(df: pd.DataFrame, a: object) -> pd.DataFrame:
+    """BRAIN ``power(x, y) = x^y`` —— **论文中缀 `^` 的对应算子**（L-B 定案，见 §3.13）。
+
+    BRAIN 原文：*"Returns x raised to the power of y (x ^ y). Note: power(x, y) can drop the
+    sign of x when y is non-integer; use signed_power(x, y) to preserve"* ⇒ 落地规则：
+
+    * ``x >= 0`` → ``x^y``；
+    * ``x < 0`` 且 ``y`` 为**整数** → 数学结果（奇数次幂为负，如 ``power(-0.05, 2) = +0.0025``）；
+    * ``x < 0`` 且 ``y`` **非整数** → **丢符号**（取 ``|x|^y``）。
+
+    与 :func:`signedpower`（BRAIN 的 ``signed_power``）的差别**只在负底数**：
+    ``signedpower(-0.05, 2) = -0.0025``。这直接决定 Alpha#48 分母 ``Σ((Δclose/delay)^2, 250)`` 的符号，
+    因此论文用 `^` 的地方一律走本函数，只有论文显式写 ``SignedPower(...)`` 的地方（Alpha#1、#84）才用
+    :func:`signedpower`。``x = 0`` 与 :func:`signedpower` 保持一致返回 0（BRAIN 未规定 ``0^0``）。
+    """
+    frame, values = _values(df)
+    exponent = _exponents(a, frame)
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        odd_integer = (np.floor(exponent) == exponent) & (np.mod(exponent, 2.0) != 0.0)
+        magnitude = np.power(np.abs(values), exponent) * np.where(odd_integer, -1.0, 1.0)
+        result = np.where(
+            values >= 0.0, np.power(np.where(values >= 0.0, values, 0.0), exponent), magnitude
+        )
+        result = np.where(values == 0.0, 0.0, result)
+    return _wrap(_mask_nonfinite(result), frame)
 
 
 def signedpower(df: pd.DataFrame, a: object, *, preserve_sign: bool = True) -> pd.DataFrame:

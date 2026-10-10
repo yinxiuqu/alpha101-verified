@@ -114,7 +114,7 @@
 |---|---|---|---|---|
 | 3.1 | `stddev`/`covariance` 的 ddof | **默认 1**（样本口径），只接受 0/1 | 参数 `ddof` | `test_a03` `test_a04` `test_a05` `test_a22` `test_a23` |
 | 3.2 | `ts_rank` 是否归一化；`rank` 是否 pct | `ts_rank` **默认 `pct=True`**（`名次/window` ∈ (0,1]）；`rank` **默认 `pct=True`**（`名次/n` ∈ (0,1]） | 参数 `pct` | `test_a10` `test_a11` `test_b01` `test_b03` |
-| 3.3 | `ts_argmax`/`ts_argmin` 基准与方向 | **默认自窗口起点 1-based** ∈ [1, window]；并提供 `basis="days_ago"`（BRAIN 口径：今天=0 ∈ [0, window-1]） | 参数 `basis` | `test_a12`–`test_a16` |
+| 3.3 | `ts_argmax`/`ts_argmin` 基准与方向 | ✅ **L-B 定案**：**默认 `days_ago`**（BRAIN 口径：今天=0 ∈ [0, window-1]）；`basis="window_start"`（自窗口起点 1-based）保留为 vnpy 对齐选项 | 参数 `basis` | `test_a12`–`test_a16` |
 | 3.4 | `scale` 轴向 | **`axis=1`**（每日 `Σ\|x\| = k`） | 无参数（口径固定），断言逐日 `Σ\|x\| = k` | `test_b05`–`test_b07` |
 | 3.5 | `correlation` 遇常数序列 | **NaN**（不是 0、不是 ±inf） | 无参数（口径固定） | `test_a20` |
 | 3.6 | `rank` 并列策略 | **`method="average"`**（pandas/scipy 默认） | 参数 `method` | `test_b02` `test_a24` |
@@ -158,27 +158,26 @@
 
 ### 3.3 `ts_argmax`/`ts_argmin` 基准、方向与并列
 
-* **决策**：返回**自窗口起点 1-based 的位置** ∈ [1, window]，窗口最新值 = `window`，最旧值 = `1`。
-  并列时取**最早出现**（与 `np.argmax`/`np.argmin` 一致）。另提供 `basis="days_ago"`：
-  **官方 BRAIN 口径**「距今几天」，今天是 0 ∈ [0, window-1]；换算关系 `days_ago = window - window_start`。
-* **理由**：
-  1. 设计文档 §8.1 给出两条候选并注明「原实现 `np.argmax(...)+1` = 自窗口起点 1-based」，
-     本库以该口径为默认（可与数值对拍、且它是有界的正整数序列，便于人工核验）；
-  2. BRAIN 口径是**算子的官方第二规范来源**（设计文档 §2.3），不能视而不见。
-     把两者都实现并同时测试，把「选哪个」这件事从隐含假设变成调用方的一次选择；
-  3. 若只实现一种，M4 差分对拍时出现的差异会被误判为 bug——这正是设计文档 §6.4 强调的
-     「先做语义归一化，严禁简单判错」。
-* **并列细节**：`[2, 2, 1]` 的 argmax 为 `1`（最早的 2），不是 `2`。文档未规定，本库显式钉死。
+* **决策（2026-10-10 由 L-B 定案）**：**默认 `basis="days_ago"`** —— 官方 BRAIN 口径
+  「距今几天」，**今天最大返回 0**、昨天返回 1，∈ [0, window-1]。
+  另一口径 `basis="window_start"`（自窗口起点 1-based ∈ [1, window]）保留可选，
+  **vnpy 用的就是它**，因子级差分对拍时用它对齐。换算关系 `days_ago = window − window_start`。
+* **一手依据（L-B，原文）**：
+  > `ts_arg_max(x, d)` — Returns the number of days since the maximum value occurred in the last d
+  > days of a time series. **If today's value is the maximum, returns 0**; if it was yesterday,
+  > returns 1, and so on.（`ts_arg_min` 同构；`refs/WorldQuant_BRAIN.pdf`，2026-10-10）
 
-⚠️ **论文原文核对（2026-10-09，见 `docs/paper_formulas.md` §7.2）**：论文只写
-*"which day ts_max(x, d) occurred on"*，**同样没有定义基准与方向**——本库的默认值仍然是
-「设计文档 §8.1 + 原实现」口径，**不是论文级结论**。这不是可以忽略的细节：
-`days_ago = window − window_start_1based` 是**序反转**而非平移，故对 `rank(Ts_ArgMax(...))`
-这类用法（Alpha#1 就是）会得到镜像排序、因子整体变号。共 **6 个因子**受影响
-（`ts_argmax`：1、57、60、96；`ts_argmin`：98、100）。
+  即 BRAIN 明确采用 `days_ago`，本库原先的默认（自窗口起点 1-based，依据「原实现 `np.argmax+1`」
+  这一 L-D 证据）**与官方口径相反**，故 M3 后翻转默认。
+* **影响面（6 个因子）**：`days_ago = window − window_start_1based` 是**序反转**而非平移，
+  因此对 `rank(Ts_ArgMax(...))`（Alpha#1）这类用法会得到镜像排序。受影响的 6 个因子：
+  `ts_argmax` 用于 1、57、60、96，`ts_argmin` 用于 98、100。翻转默认后它们的取值随之改变
+  （L2 结构对照与 L4 不变量不受影响，见 `docs/verification.md` §1.6）。
+* **并列细节**：取**最早出现**（与 `np.argmax`/`np.argmin` 一致）⇒ 在 `days_ago` 基准下是「距今最远」。
+  `[2, 2, 1]` 的 argmax：`days_ago = 2`、`window_start = 1`。**BRAIN 文档未规定并列**，本库显式钉死。
 * **vnpy 差分实测（2026-10-09）**：vnpy 的 ``_reduce_argmax_slice`` 就是 ``series.arg_max() + 1``，
-  即 **1-based 自窗口起点**——与本库默认口径 **逐点一致**（实测）。因此本库默认值获得了
-  第二实现的独立支持（L-D 级证据）；**BRAIN 官方文案（L-B）仍待复核**，但它已不再是「无证据的选择」。
+  即 1-based 自窗口起点 ⇒ **vnpy 与 BRAIN 官方口径不一致**（记入 `docs/deviations.md` §3.2 V16）；
+  因子级差分因此新增 `basis="window_start"` 对齐开关（`tools/factor_differential.py`）。
 
 ### 3.4 `scale` 轴向：`axis=1`
 
@@ -312,6 +311,64 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | 三元 `cond ? a : b`，cond 为 NaN | 结果 NaN | 同上 | 16 处 |
 | 逐元素 `min/max`，一侧 NaN | **返回另一侧**（`np.fmin/fmax`），两侧皆 NaN ⇒ NaN | 论文未定义；若取 NaN 传播，alpha96 这类 `max(分支A, 分支B)` 会在某分支系统性 NaN 时**整片退化**（实测教训） | 9 个因子 |
 | `log(x)`，x ≤ 0 | NaN（不是 −inf） | §3.9 的 elemwise 层决策 | alpha2/29/81 |
+
+### 3.13 WorldQuant BRAIN 官方算子文档（L-B）入库与三处定案
+
+**一手依据**：`refs/WorldQuant_BRAIN.pdf`（BRAIN 平台 `learn/operators` 页面打印件，11 页，
+打印时间 2026-10-10 21:07，sha256 `8a20029d93d9ecd8…`）。该文件**不入库**（登录墙内的专有文档，
+已 gitignore），仅作本地规范依据。
+
+⚠️ **能力边界（如实声明）**：打印件里每个算子只展开了**首行描述**，细节在页面 `Show more` 里
+**未被打印** ⇒ 本文档能定案的是「首行描述已说清的事」（方向、基准、两算子之分），
+**不能**定案 `rank` 的 `rate=2`、`ts_decay_linear` 的 `dense`、`min/max` 的 NaN 口径等。
+
+#### 3.13.1 三处定案（原先 27 个 `ambiguous` 因子的来源）
+
+| 议题 | BRAIN 原文（逐字） | 定案 |
+|---|---|---|
+| A11 `ts_decay_linear` 方向 | *"Applies a linear decay to time-series data over a set number of days, smoothing the data by **averaging recent values** and **reducing the impact of older or missing data**."* | **近期权重更大** = 本库默认 `order="recent_first"` ✓（vnpy 的 `oldest_first` 与官方相反，见 V18） |
+| A4 `ts_arg_max`/`ts_arg_min` 基准 | *"Returns the number of days since the maximum value occurred in the last d days of a time series. **If today's value is the maximum, returns 0**; if it was yesterday, returns 1, and so on."* | **`days_ago`（今天=0）** ⇒ 本库**翻转默认**（原默认 1-based 自窗口起点与官方相反），见 §3.3 |
+| A20 中缀 `^` | *"`power(x, y)` Returns x raised to the power of y (x ^ y). Note: power(x, y) **can drop the sign of x when y is non-integer**; use `signed_power(x, y)` to preserve"* + *"`signed_power(x, y)` x raised to the power of y such that final result preserves sign of x"* | 论文 `^` → **`power`**（新增 `elemwise.power`）；论文显式 `SignedPower(...)`（Alpha#1、#84）→ `signed_power`。alpha48 的 `Σ((Δclose/delay)^2)` 因此得正 |
+
+#### 3.13.2 与本库既有决策的**相互印证**（L-B 确认，无需改码）
+
+| 本库决策 | BRAIN 原文 | 结论 |
+|---|---|---|
+| §3.4 `scale` 逐日截面 `Σ\|x\| = k` | *"`scale(x, scale=1, longscale=1, shortscale=1)` Scales the input so that the sum of absolute values **across all instruments** equals a specified book size."* | ✅ 一致；并确认 BRAIN 另有 `ts_scale`（时序 min-max 到 [0,1]）⇒ 论文的 `scale` 不是它 |
+| §3.5 零方差相关 → NaN | *"`ts_corr(x, y, d)` Calculates the Pearson correlation between two variables, x and y, over the past d days"* | 定义一致；零方差口径官方未写，本库显式钉死（§3.12） |
+| §3.12 比较/算术的 NaN | *"`add/multiply/subtract(..., filter=false)` Set filter=true to treat NaNs as 0 (1) before summing"* | ✅ 默认 `filter=false` ⇒ **算术不吞 NaN**，与本库一致 |
+| §3.12 `log` 的定义域 | *"`log(x)` Calculates the natural logarithm of the input value. Commonly used to transform data that has positive values."* | ✅ 暗示 x ≤ 0 未定义 ⇒ 本库给 NaN（不给 −inf） |
+| §3.11 的两种幂 | *"`signed_power(x, y)` = **sign(x) * (abs(x) ^ y)**"* | ✅ 与本库 `signedpower(preserve_sign=True)` **逐字一致**；`signed_power` 的正文还补了一句「For power of 2, `x^y` will be a parabola but `signed_power(x, y)` will be odd and one-to-one」——正是 alpha48 必须用 `power` 的理由 |
+| §3.12 `sign` 的 NaN | *"`sign(x)` … If the input is NaN, returns NaN."* | ✅ 一致 |
+| A24 行业中性化 | *"`group_neutralize(x, group)` Neutralizes Alpha values within each specified group by **subtracting the group mean** from each value."* | ✅ 与 `ind_neutralize` 的逐日组内去均值一致 |
+| §3.10 `min`/`max` 两种语义 | *"`max(x, y, ..)` Maximum value of all inputs. **At least 2 inputs are required**."*（`min` 同） | ✅ BRAIN 的 `min/max` 就是逐元素多输入版本；论文 `min(x, d)`（第二参数是常数天数）对应 `ts_min/ts_max` |
+| `ts_rank` 逐股时序口径 | *"`ts_rank(x, d, constant = 0)` Ranks the value of a variable **for each instrument** over a specified number of past days, returning the rank of the current value"* | ✅ 与本库 `ts_rank` 一致（归一化区间官方未写明，本库取 ∈ (0,1]，见 A2） |
+| §3.9 `adv{d}` | 文档中**无** `adv` 算子（它是数据字段而非算子） | 论文的 `adv{d}` = 美元成交额 ⇒ 本库取 `amount` 的依据仍在 L-A + §3.9 |
+
+#### 3.13.3 完整文档（API 级）新揭示的 3 处默认口径差异（**已定案、待落地**）
+
+打印件只给了首行描述；随后用会话凭据抓取了**完整文档**（`GET /operators/{name}`，66 个算子中 65 个可取，
+本地语料 `refs/brain_operator_docs.md`，gitignored）。完整正文里的**官方算例**又定案了三处
+**与本库/参照都不同**的口径 —— 三者都会**改变因子取值**，故单独作为下一里程碑落地：
+
+| 议题 | BRAIN 完整文档原文/算例 | 本库现状 | 影响面 |
+|---|---|---|---|
+| `rank`/`ts_rank` 归一化 | `rank`：「mapping the **lowest value to 0.0** and the **highest to 1.0**」，算例 `(4,3,6,10,2) → (0.5, 0.25, 0.75, 1, 0)`；`ts_rank`：「13 is the 4th of 5 (0-based 3); **Normalized rank: 3 / (5 − 1) = 0.75**」⇒ **[0,1] 闭区间 `(名次−1)/(n−1)`** | `pct=True` ⇒ `名次/n ∈ (0,1]`（依 vnpy 的 `/count()`） | **全部 101 个因子** |
+| `ts_std_dev` 的 ddof | 算例：`(0 + 0.0001 + 0.0004 + 0.0001 + 0.0004) / **5** = 0.0002` ⇒ **ddof=0（总体）** | 默认 `ddof=1`（A1） | 8 个因子 + `covariance` |
+| `ts_decay_linear` 缺失值 | 「By default, it operates in **sparse mode** (`dense = false`), **treating missing (NaN) values as zero**」 | 严格整窗有效，否则 NaN（§3.12） | 22 个 decay 因子 |
+
+同时确认（无需改动）：`rank` 的 `rate=2` 只是**排序精度**开关（"set to 0 for exact sorting"）；
+`ts_corr` 是标准 Pearson 且「first element is the latest」；`if_else(cond, a, b)` 与本库 `_if` 同义。
+
+#### 3.13.4 文档也没给出的（本库显式决策）
+
+`ts_decay_linear` 的 `dense=true` 分支细节、逐元素 `min/max` 的 NaN 口径、滚动算子的 `min_periods`（预热期）、
+`if_else` 条件为 NULL 时的分支。均为库级约定，本库显式决策并测试（§3.12、A1、A2、A7、A8）。
+
+`rank(x, rate=2)` 的 `rate` 语义、`ts_decay_linear` 的 `dense` 参数、逐元素 `min/max` 的 NaN 口径、
+`ts_std_dev` 的 ddof、`ts_corr`/滚动算子的 `min_periods`。
+这些**均为库级约定**（不改变公式含义），本库各自显式决策并测试（§3.12、A1、A2、A7、A8），
+且在 `docs/deviations.md` §3.2 记录与 vnpy 的差异。
 
 ## 4. 逐算子定义
 
@@ -489,11 +546,13 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 
 | # | 事项 | 状态 | 影响面 |
 |---|---|---|---|
-| 1 | **BRAIN 官方算子文档（L-B）**：`ts_arg_max`/`ts_arg_min` 基准、`ts_decay_linear` 权重方向、`ts_rank`/`rank` 归一化、`scale` 轴向 | **未获取**：2026-10-09 实测 `platform.worldquantbrain.com/learn/operators` 只返回登录态空壳（正文仅 `index`）。其中 **argmax 基准已获 vnpy 实测支持**（§3.3），`decay_linear` 方向仍是最硬的未决项 | **22 个因子**（decay） |
+| 1 | **BRAIN 官方算子文档（L-B）** | ✅ **已获取**（2026-10-10，`refs/WorldQuant_BRAIN.pdf`，sha256 `8a20029d…`）：三处歧义全部定案 —— `ts_arg_max/min` 基准（§3.3）、`ts_decay_linear` 权重方向（§3.13）、中缀 `^` 的 `power`/`signed_power` 之分（§3.11）；`scale` 轴向、`ts_rank`/`rank`、`group_neutralize`、`sign`/`log`、`add/multiply/subtract` 的 `filter` 语义也获原文确认（§3.13） | 27 个因子的 ambiguous 标签清零 |
+| 1b | BRAIN **完整文档（API 级）**已入库（`refs/brain_operator_docs.md`，65 个算子正文 + 算例）：`rank`/`ts_rank` 归一化 = `(名次−1)/(n−1) ∈ [0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 默认稀疏（NaN→0） | ✅ 已定案（§3.13.3）；⏳ **待落地**（三处都改变因子取值） | **101 个因子**（归一化）+ 8（ddof）+ 22（decay） |
+| 1c | 完整文档**也未给出**：`dense=true` 分支、`min/max` 的 NaN 口径、滚动算子 `min_periods`、`if_else` 条件为 NULL 的分支 | 未定（文档确实没写） | 本库显式决策（§3.12） |
 | 2 | 与 vnpy `{cs,ts}_function.py` 的逐项口径核对（§5.3、§6.4） | ✅ **算子层已完成**（2026-10-09：`tools/differential.py`，24 项，见 §6）；`ta_*` 与因子级差分待 M4（§6.3 L3） | 82 个因子（M4） |
 | 3 | **非整数窗口 `floor(d)` 改码**（§3.8，论文 L-A 已明确） | 已判定、**未改码**（M1 冻结件；需同步改 `§4.4` + `test_a27`） | **40 个因子** |
 | 4 | `elemwise` 层（`abs`/`log`/`sign`/`signedpower`） | M2 交付（`operators.md` §1；论文用它们覆盖 15 个因子） | 15 个因子 |
-| 5 | `signedpower` 是否保号（`x^a` vs `sign(x)·\|x\|^a`） | 待 BRAIN 文档或 vnpy 实现；Alpha#1/#84 中 a=2 无差异 | 2 个因子 |
+| 5 | `signedpower` 是否保号 | ✅ **已定案**（§3.11 + §3.13）：BRAIN 把 `power`（负底数 + 非整数指数丢符号）与 `signed_power`（保号）分为两个算子；论文中缀 `^` → `power`，显式 `SignedPower(...)` → `signed_power`。alpha48 的负收益平方因此得正；alpha90 的底数 `rank(...) ≥ 0` 两种读法同值 | 2 个因子（48、90） |
 | 6 | `adv{d}` 落地口径（论文＝**美元成交额** → A 股取 `amount` 而非 `volume`） | 已判定（L-A）；需在 `deviations.md` 逐因子登记 | **45 个因子** |
 | 7 | `ind_neutralize` 静态快照路径的 T×N 标签矩阵内存优化（one-hot 矩阵乘法） | 已记录于代码注释；当前优先正确性与单一路径 | 性能 |
 | 8 | 中性化算子在大面板上的性能基准 | 未做（M1 只承诺正确性） | 性能 |
@@ -503,6 +562,8 @@ A 股面板对应 **`amount`（元）** ⇒ ``_adv(amount, d) = sma(amount, d)``
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：20 算子口径、六个歧义点决策、边界策略、设计文档勘误 4 条、M4 归一化清单 |
-| **v0.4** | 2026-10-09 | M3 新增：§3.9 `adv{d}` 取 `amount`（影响 45 因子）、§3.10 `min/max` 两种语义的消歧规则、§3.11 中缀 `^` 取保号幂（alpha48/90 因此标 ambiguous）、§3.12 **缺失值语义总表**（比较/逻辑/三元/逐元素 min-max/log）；并追加一条由全量因子跑暴露并修掉的算子边界：`correlation`/`covariance` 在近乎零方差窗口中的 ±inf 一律掩为 NaN |
+| **v0.6** | 2026-10-10 | 追加 §3.13.3/§3.13.4：API 级**完整文档**（含官方算例）又定案三处默认口径差异（`rank`/`ts_rank` 归一化 `[0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 稀疏 NaN→0），均**待落地**；§7 待办按影响面重排 |
+| v0.5 | 2026-10-10 | **BRAIN 官方算子文档（L-B）入库**：新增 §3.13（原文引文 + 三处定案 + 与本库既有决策的相互印证 + 文档未展开项）；§3.3 默认基准翻转为 `days_ago`（BRAIN：今天最大返回 0）、§3.11 中缀 `^` 定案为 `power`（新增 `elemwise.power`，alpha48 负收益平方得正）、§3.13.1 确认 `ts_decay_linear` 近期权重大（本库默认）；§7 待办项 1/5 结案（27 个因子的 `ambiguous` 清零） |
+| v0.4 | 2026-10-09 | M3 新增：§3.9 `adv{d}` 取 `amount`（影响 45 因子）、§3.10 `min/max` 两种语义的消歧规则、§3.11 中缀 `^` 取保号幂（alpha48/90 因此标 ambiguous）、§3.12 **缺失值语义总表**（比较/逻辑/三元/逐元素 min-max/log）；并追加一条由全量因子跑暴露并修掉的算子边界：`correlation`/`covariance` 在近乎零方差窗口中的 ±inf 一律掩为 NaN |
 | v0.3 | 2026-10-09 | 加入 **vnpy 差分实测**：§3.1（vnpy `ts_std` 用 ddof=0 且与自身 `cs_std` 不一致）、§3.2（`cs_rank`=min+pct；`ts_rank` 与 `percentileofscore` 数学等价、实测逐点一致）、§3.3（vnpy `arg_max()+1` ⇒ 本库 1-based 默认获第二实现支持）、§3.4（`cs_scale` 同为每日截面）、§3.6（文档那组并列数字其实与参照 min 口径吻合）、**§3.7（vnpy 的 `decay_linear` 权重方向与本库默认相反 ⇒ 22 个因子的最高风险项，新增 `order` 参数对齐）**；§6 换成实测归一化清单（18 项一致 + 6 项归因 + 3 项参照能力边界）；§7 更新 1/2 项 |
 | v0.2 | 2026-10-09 | 加入论文原文（arXiv:1601.00991v3，逐字入库于 `docs/paper_formulas.md`）核对结论：①`indneutralize` 语义获 **L-A 确认**（组内截面去均值）②新增 §3.7 `decay_linear` 权重列举顺序歧义（22 因子）③新增 §3.8 非整数窗口 `floor(d)` 规则（40 因子，本库当前偏离待改）④§3.3 补记 argmax 基准在论文中同样未定义（6 因子，两读法为序反转）⑤§3.4 补记 `scale` 轴向论文未写（6 因子）⑥§1 补记逐元素函数层缺口（15 因子）⑦§7 未决表按影响面重排 |

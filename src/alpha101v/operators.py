@@ -21,7 +21,7 @@
 ===== ==========================================================
 ddof  ``stddev``/``covariance`` 默认 ``ddof=1``（样本口径），仅接受 0/1
 pct   ``ts_rank`` 默认 ``pct=True`` → ``rankdata(window)[-1] / window`` ∈ (0, 1]
-argmax ``ts_argmax``/``ts_argmin`` 默认 ``basis="window_start"``（自窗口起点 1-based）
+argmax ``ts_argmax``/``ts_argmin`` 默认 ``basis="days_ago"``（BRAIN 官方口径：今天=0，L-B 定案）
 scale ``scale`` 沿 ``axis=1``（每日 ``Σ|x| = k``），``axis=0`` 是错的
 floor 非整数天数按论文取下整 ``floor(d)``（58–99 号因子大量使用）
 order ``decay_linear`` 权重方向默认「最新最大」，``order="oldest_first"`` 对齐 vnpy
@@ -66,7 +66,7 @@ __all__ = [
 ALLOWED_DDOF = (0, 1)
 
 #: 允许的 ``ts_argmax``/``ts_argmin`` 基准。
-ALLOWED_ARG_BASIS = ("window_start", "days_ago")
+ALLOWED_ARG_BASIS = ("days_ago", "window_start")
 
 #: 允许的 ``rank`` 并列处理策略。
 ALLOWED_RANK_METHODS = ("average", "min", "max", "first", "dense")
@@ -337,31 +337,40 @@ def _argmin_1based(window_values: np.ndarray) -> float:
 
 
 def _shift_arg_basis(pos: pd.DataFrame, window: int | float, basis: str) -> pd.DataFrame:
-    """把「自窗口起点 1-based」的位置换算成所请求的基准。"""
+    """把「自窗口起点 1-based」的位置换算成所请求的基准。
+
+    ``days_ago``（**默认**）= BRAIN 官方口径（今天=0）；``window_start`` = 自窗口起点 1-based
+    （vnpy 的口径，因子级差分对拍时用它对齐）。
+    """
+    if basis == "days_ago":
+        # BRAIN 原文：today's value is the maximum → 0；yesterday → 1 ⇒ days_ago = window - 自起点位置
+        return float(window) - pos
     if basis == "window_start":
         return pos
-    if basis == "days_ago":
-        # 官方（BRAIN）口径：今天是 0，昨天是 1 …… 等价换算 = window - 自起点位置
-        return float(window) - pos
     raise ValueError(f"basis 只接受 {ALLOWED_ARG_BASIS}，收到 {basis!r}")
 
 
-def ts_argmax(df: pd.DataFrame, window: int | float, basis: str = "window_start") -> pd.DataFrame:
+def ts_argmax(df: pd.DataFrame, window: int | float, basis: str = "days_ago") -> pd.DataFrame:
     """最大值在最近 ``window`` 期中的位置。
 
-    ★ 歧义点：``basis`` 显式化。
-    ``"window_start"``（默认）= 自窗口起点 1-based ∈ [1, window]；
-    ``"days_ago"`` = 官方 BRAIN 口径「距今几天」，今天是 0 ∈ [0, window-1]。
-    两者关系：``days_ago = window - window_start``，本库同时提供并测试，避免歧义沉默。
-    并列时取**最早出现**（与 ``np.argmax`` 一致）。
+    ★ 歧义点 ``basis`` —— **已由 BRAIN 官方文档（L-B）定案**：``"days_ago"``（默认）=
+    距今几天，**今天最大返回 0**、昨天返回 1；即 BRAIN 原文
+    *"Returns the number of days since the maximum value occurred in the last d days of a time
+    series. If today's value is the maximum, returns 0; if it was yesterday, returns 1, and so on."*
+    （`docs/operators.md` §3.13，一手依据 `refs/WorldQuant_BRAIN.pdf`）。
+
+    另一口径 ``"window_start"``（自窗口起点 1-based ∈ [1, window]）保留可选：**vnpy 用的是它**
+    （`ts_function.py`: ``series.arg_max() + 1``），因子级差分对拍时用它对齐。两者关系
+    ``days_ago = window − window_start``（**序反转**，不是平移）。
+    并列时取**最早出现**（与 ``np.argmax`` 一致；BRAIN 未规定）。
     """
     df, window = _prep_win(df, window)
     pos = df.rolling(window=window, min_periods=window).apply(_argmax_1based, raw=True)
     return _shift_arg_basis(pos, window, basis)
 
 
-def ts_argmin(df: pd.DataFrame, window: int | float, basis: str = "window_start") -> pd.DataFrame:
-    """最小值在最近 ``window`` 期中的位置（``basis`` 语义同 :func:`ts_argmax`）。"""
+def ts_argmin(df: pd.DataFrame, window: int | float, basis: str = "days_ago") -> pd.DataFrame:
+    """最小值在最近 ``window`` 期中的位置（``basis`` 语义同 :func:`ts_argmax`，BRAIN 同样「今天=0」）。"""
     df, window = _prep_win(df, window)
     pos = df.rolling(window=window, min_periods=window).apply(_argmin_1based, raw=True)
     return _shift_arg_basis(pos, window, basis)

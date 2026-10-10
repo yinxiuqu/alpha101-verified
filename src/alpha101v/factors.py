@@ -18,7 +18,7 @@
 `sum`                  → `ts_sum`
 `min/max(x, 常数d)`     → `ts_min/ts_max`；`min/max(表达式, 表达式)` → 逐元素 `minimum/maximum`
 `adv{d}`               → `_adv(amount, d)` = `sma(amount, d)`（论文：平均每日**美元成交额**）
-`^`                    → `_pow(x, a)` = 保号幂 `sign(x)·|x|^a`（消歧见 A20）
+`^`                    → `_pow(x, a)` = BRAIN `power`（负底数整数指数保数学符号，见 §3.13/A20）
 `x ? y : z`            → `_if`；比较 → `_lt/_gt/_eq`（**NaN 传播**，非 C 的 False）
 `||`                   → `_or`（Kleene 三值：True∨未知=True，False∨未知=未知）
 `IndNeutralize(x, IndClass.<level>)` → `ind_neutralize(x, ind_<level>)`
@@ -26,8 +26,10 @@
 
 状态（设计文档 §6.8 / §9 R2）
 ----------------------------
-`verified` 需六条门槛全满足（含 L3 因子级差分与 L5 golden 快照）⇒ M3 阶段无人可得；
-故只标 `partial`（结构与论文一致）与 `ambiguous`（**规范本身未定**且改变数值）。
+`verified` 需六条门槛全满足 ⇒ 目前只标 `partial`。
+M3/M4 期间曾把 27 个因子标为 `ambiguous`（decay 方向 22 + argmax 基准 6 + `^` 语义 2，去重 27）；
+**2026-10-10 拿到 WorldQuant BRAIN 官方算子文档（L-B）后三处歧义全部定案**（见
+`docs/operators.md` §3.13 的原文引文），因此 `AMBIGUOUS_FACTORS` 清空，101 个因子一律 `partial`。
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from .elemwise import abs_, log, maximum, minimum, sign, signedpower
+from .elemwise import abs_, log, maximum, minimum, power, sign, signedpower
 from .neutralize import ind_neutralize
 from .operators import (
     _as_frame,
@@ -209,13 +211,14 @@ def _if(condition: pd.DataFrame, yes: object, no: object) -> pd.DataFrame:
 
 
 def _pow(base: object, exponent: object) -> pd.DataFrame:
-    """论文中缀 ``^``：默认取**保号幂** ``sign(x)·|x|^a``（消歧与影响见 ambiguous 原因 A20）。
+    """论文中缀 ``^`` → BRAIN 的 ``power(x, y) = x^y``（L-B 定案，见 A20 与 §3.13）。
 
-    切到论文字面 ``x^a`` 只需改成 ``signedpower(..., preserve_sign=False)``；两者只在
-    **底数为负**时不同（alpha48 的负收益平方、alpha90 的负离差^分数指数）——这两个因子
-    因此被标为 `ambiguous`。
+    BRAIN 同时提供 ``power``（负底数 + 非整数指数时**丢符号**）与 ``signed_power``（保号），
+    论文的 ``^`` 对应前者、显式写 ``SignedPower(...)`` 的地方（Alpha#1、#84）才对应后者。
+    这个区别是**实质性的**：alpha48 的分母 ``Σ((Δclose/delay)^2, 250)`` 在负收益日必须得正
+    （``power``），若用保号幂会得到负的「平方和」并翻转整个因子的符号。
     """
-    return signedpower(base, exponent, preserve_sign=True)
+    return power(base, exponent)
 
 
 # ---------------------------------------------------------------------------
@@ -1272,14 +1275,17 @@ def alpha101(close, Open, high, low):
 # ---------------------------------------------------------------------------
 
 #: ``ambiguous`` 判定：**规范本身未定**且会改变数值的因子（设计文档 §9 R2：不得标 verified）。
-#: 每条原因都列出因子清单，可由 `tools/conformance_report.py` 从论文公式复算核对。
-AMBIGUOUS_FACTORS: dict[str, tuple[int, ...]] = {
-    "decay_linear 权重方向未定案（vnpy 取相反方向，BRAIN 文案未取得）": (
-        31, 39, 57, 58, 59, 63, 66, 71, 72, 73, 76, 77, 82, 87, 88, 89, 91, 92, 93, 96, 97, 98,
-    ),
-    "ts_argmax/ts_argmin 基准未定案（论文只写 which day，BRAIN 文案未取得）": (1, 57, 60, 96, 98, 100),
-    "`^` 语义（论文字面 x^a vs 保号幂）在此因子产生实质差异（负底数）": (48, 90),
-}
+#:
+#: **2026-10-10 起为空**：拿到 WorldQuant BRAIN 官方算子文档（L-B，`refs/WorldQuant_BRAIN.pdf`）后，
+#: 原先 27 个因子的三条歧义全部定案（原文引文见 `docs/operators.md` §3.13）：
+#:
+#: 1. `ts_decay_linear` —— 原文「smoothing the data by **averaging recent values** and reducing the
+#:    impact of older or missing data」⇒ 近期权重更大 = 本库默认（vnpy 的相反方向是它的选择）；
+#: 2. `ts_arg_max`/`ts_arg_min` —— 原文「If **today's value is the maximum, returns 0**」⇒ 本库默认
+#:    已切到 BRAIN 的 `days_ago`（0 基），受影响的 6 个因子（1/57/60/96/98/100）随之定案；
+#: 3. 中缀 `^` —— BRAIN 把 `power`（可丢符号）与 `signed_power`（保号）分成两个算子，论文的 `^`
+#:    对应 `power` ⇒ alpha48 的负收益平方得正（alpha90 的底数是 `rank(...)` ≥ 0，两种读法同值）。
+AMBIGUOUS_FACTORS: dict[str, tuple[int, ...]] = {}
 
 #: 设计文档 §7.7 的 5 个试点因子（M2 交付，测试单独覆盖）。
 PILOT_NAMES: tuple[str, ...] = ("alpha101", "alpha4", "alpha5", "alpha41", "alpha56")
@@ -1310,7 +1316,10 @@ def _register_all() -> None:
             function,
             paper_ref=f"Appendix A, Alpha#{number}（逐字公式见 docs/paper_formulas.md §5）",
             status="ambiguous" if reason else "partial",
-            notes=reason or "结构与论文一致（算子级对照等价）；待 M4 因子级差分与 M5 golden 快照",
+            notes=reason or (
+                "结构与论文一致（L2 对照等价）；算子层与因子层均已通过 vnpy 差分（M4）；"
+                "待 M5 golden 快照后方可 verified"
+            ),
         )
 
 

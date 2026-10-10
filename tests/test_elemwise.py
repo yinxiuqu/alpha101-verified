@@ -23,12 +23,14 @@ def frame(values, cols=COLS) -> pd.DataFrame:
 
 def test_elemwise_surface_is_separate_from_the_twenty_operators():
     """逐元素层与 20 算子面互不相交，且都从包命名空间导出。"""
-    assert set(elemwise.ELEMWISE) == {"abs_", "log", "maximum", "minimum", "sign", "signedpower"}
+    assert set(elemwise.ELEMWISE) == {
+        "abs_", "log", "maximum", "minimum", "power", "sign", "signedpower"
+    }
     assert not set(elemwise.ELEMWISE) & set(alpha101v.OPERATORS)
     assert len(alpha101v.OPERATORS) == 20
     for name in elemwise.ELEMWISE:
         assert callable(getattr(elemwise, name)), name
-    # 只有逐元素层自己的 6 个函数**不**进 20 算子面（`alpha101v.OPERATORS` 由另一测试守 20）
+    # 逐元素层自己的 7 个函数都**不**进 20 算子面（`alpha101v.OPERATORS` 由另一测试守 20）
 
 
 def test_abs_matches_numpy():
@@ -59,6 +61,41 @@ def test_sign_zero_is_zero_and_nan_stays_nan():
     np.testing.assert_allclose(
         out.to_numpy(), [[-1.0, 0.0], [1.0, np.nan], [0.0, -1.0]], equal_nan=True
     )
+
+
+def test_power_follows_brain_semantics_not_signed_power():
+    """★ `^` 的 L-B 定案：BRAIN 的 `power` 与 `signed_power` 是两个算子。
+
+    原文：「power(x, y) can **drop the sign of x when y is non-integer**; use signed_power(x, y)
+    to preserve」⇒ 负底数 + **整数**指数必须给数学结果（``power(-0.05, 2) = +0.0025``），
+    这正是 Alpha#48 分母 ``Σ((Δclose/delay)^2, 250)`` 得正的前提。
+    """
+    negative = frame([[-0.05, -0.5], [0.05, -2.0], [0.0, 0.25]])
+    np.testing.assert_allclose(
+        elemwise.power(negative, 2.0).to_numpy(),
+        [[0.0025, 0.25], [0.0025, 4.0], [0.0, 0.0625]],
+        rtol=1e-12,
+    )
+    # 保号幂给出负的「平方」——若误用它，alpha48 的分母会翻号
+    np.testing.assert_allclose(
+        elemwise.signedpower(negative, 2.0).to_numpy(),
+        [[-0.0025, -0.25], [0.0025, -4.0], [0.0, 0.0625]],
+        rtol=1e-12,
+    )
+    # 负底数 + 非整数指数：丢符号（取 |x|^y），不是 NaN
+    np.testing.assert_allclose(
+        elemwise.power(frame([[-0.5, -0.25], [0.5, 0.0], [1.0, 4.0]]), 0.5).to_numpy(),
+        [[0.5 ** 0.5, 0.5], [0.5 ** 0.5, 0.0], [1.0, 2.0]],
+        rtol=1e-12,
+    )
+    # 非负底数时与 signed_power 完全一致（论文里绝大多数 `^` 都属于这种）
+    non_negative = frame([[0.0, 0.25], [1.0, 2.0], [3.0, 4.0]])
+    for exponent in (0.5, 1.0, 2.0, 5.0):
+        np.testing.assert_allclose(
+            elemwise.power(non_negative, exponent).to_numpy(),
+            elemwise.signedpower(non_negative, exponent).to_numpy(),
+            rtol=1e-12,
+        )
 
 
 def test_signedpower_default_preserves_sign():
@@ -172,6 +209,7 @@ def test_elemwise_does_not_modify_inputs(name):
         "signedpower": lambda: elemwise.signedpower(data, 2.0),
         "minimum": lambda: elemwise.minimum(data, -1.0),
         "maximum": lambda: elemwise.maximum(data, 1.0),
+        "power": lambda: elemwise.power(data, 2.0),
     }[name]
     call()
     pd.testing.assert_frame_equal(data, snapshot)

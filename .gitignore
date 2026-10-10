@@ -15,3 +15,6 @@ venv/
 
 # vnpy 差分参照（MIT，仅测试期；由 tools/fetch_vnpy_reference.sh 下载，不入库）
 .vnpy-ref/
+
+# BRAIN 官方算子文档（登录墙内的专有文档）：仅本地参考，绝不提交
+refs/

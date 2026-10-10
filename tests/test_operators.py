@@ -199,25 +199,36 @@ def test_a11_ts_rank_pct_range_and_midrank():
     assert np.all((pct[4:] > 0) & (pct[4:] <= 1))
 
 
-def test_a12_ts_argmax_default_basis_is_window_start():
-    """★ 歧义点 argmax 基准：默认自窗口起点 1-based，``[1,3,2]`` → 2。"""
+def test_a12_ts_argmax_default_basis_is_days_ago():
+    """★ 歧义点 argmax 基准：**默认 = BRAIN 官方口径 `days_ago`（今天=0）**，``[1,3,2]`` → 1。
+
+    一手依据：BRAIN 文档原文「Returns the number of days since the maximum value occurred in the
+    last d days of a time series. **If today's value is the maximum, returns 0**; if it was
+    yesterday, returns 1, and so on.」（`docs/operators.md` §3.13）。
+    """
     x3 = seq([1, 3, 2])
-    assert_allclose(values(ops.ts_argmax(x3, 3)), [np.nan, np.nan, 2.0])
+    assert_allclose(values(ops.ts_argmax(x3, 3)), [np.nan, np.nan, 1.0])
 
 
-def test_a13_ts_argmax_days_ago_basis():
-    """``basis="days_ago"``（官方 BRAIN 口径：今天=0）→ ``[1,3,2]`` → 1。"""
+def test_a13_ts_argmax_window_start_basis_is_the_vnpy_option():
+    """``basis="window_start"``（自窗口起点 1-based；**vnpy 用的就是这个**）→ ``[1,3,2]`` → 2。"""
     x3 = seq([1, 3, 2])
-    assert_allclose(values(ops.ts_argmax(x3, 3, basis="days_ago")), [np.nan, np.nan, 1.0])
+    assert_allclose(values(ops.ts_argmax(x3, 3, basis="window_start")), [np.nan, np.nan, 2.0])
 
 
 def test_a14_ts_argmax_direction_and_ties():
-    """方向覆盖：最新值是最大值 → 3 / 0；最旧值是最大值 → 1 / 2；并列取最早出现。"""
-    assert_allclose(values(ops.ts_argmax(seq([1, 2, 3]), 3)), [np.nan, np.nan, 3.0])
+    """方向覆盖（两个基准都显式断言，不依赖默认）：最新值最大 → 起点 3 / 距今 0；最旧值最大 → 1 / 2。"""
+    assert_allclose(values(ops.ts_argmax(seq([1, 2, 3]), 3, basis="window_start")), [np.nan, np.nan, 3.0])
     assert_allclose(values(ops.ts_argmax(seq([1, 2, 3]), 3, basis="days_ago")), [np.nan, np.nan, 0.0])
-    assert_allclose(values(ops.ts_argmax(seq([3, 2, 1]), 3)), [np.nan, np.nan, 1.0])
+    assert_allclose(values(ops.ts_argmax(seq([3, 2, 1]), 3, basis="window_start")), [np.nan, np.nan, 1.0])
     assert_allclose(values(ops.ts_argmax(seq([3, 2, 1]), 3, basis="days_ago")), [np.nan, np.nan, 2.0])
-    assert_allclose(values(ops.ts_argmax(seq([2, 2, 1]), 3)), [np.nan, np.nan, 1.0])
+    # 并列取最早出现 ⇒ 在 days_ago 基准下是「距今最远」的那个
+    assert_allclose(values(ops.ts_argmax(seq([2, 2, 1]), 3, basis="days_ago")), [np.nan, np.nan, 2.0])
+    # 两个基准必须互为序反转：days_ago = window − window_start
+    for values_seq in ([1, 2, 3], [3, 2, 1], [2, 2, 1]):
+        start = values(ops.ts_argmax(seq(values_seq), 3, basis="window_start"))
+        ago = values(ops.ts_argmax(seq(values_seq), 3, basis="days_ago"))
+        assert_allclose(ago, 3.0 - start)
 
 
 def test_a15_ts_argmax_rejects_unknown_basis():
@@ -226,11 +237,12 @@ def test_a15_ts_argmax_rejects_unknown_basis():
 
 
 def test_a16_ts_argmin():
-    """``ts_argmin([3,1,2], 3)`` → 自起点 2 / 距今 1。"""
+    """``ts_argmin([3,1,2], 3)`` → **默认（BRAIN 距今）1** / 自起点 2。"""
     x3 = seq([3, 1, 2])
-    assert_allclose(values(ops.ts_argmin(x3, 3)), [np.nan, np.nan, 2.0])
-    assert_allclose(values(ops.ts_argmin(x3, 3, basis="days_ago")), [np.nan, np.nan, 1.0])
-    assert_allclose(values(ops.ts_argmin(seq([2, 2, 3]), 3)), [np.nan, np.nan, 1.0])
+    assert_allclose(values(ops.ts_argmin(x3, 3)), [np.nan, np.nan, 1.0])
+    assert_allclose(values(ops.ts_argmin(x3, 3, basis="window_start")), [np.nan, np.nan, 2.0])
+    # 并列取最早出现 ⇒ days_ago = 2
+    assert_allclose(values(ops.ts_argmin(seq([2, 2, 3]), 3)), [np.nan, np.nan, 2.0])
 
 
 def test_a17_decay_linear_weights():

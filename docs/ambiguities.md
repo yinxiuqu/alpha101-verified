@@ -10,7 +10,7 @@
 > 本文档是《歧义清单》的载体，与 `docs/deviations.md`（偏差清单）配对使用。
 
 **`ambiguous` 的判定标准（本项目的显式划线）**：只有当**论文规范本身未定**、
-且不同读法会改变**因子含义/数值**时，才把因子标为 `ambiguous`（A4/A11/A20 → 27 个因子）。
+且不同读法会改变**因子含义/数值**时，才把因子标为 `ambiguous`（历史上 A4/A11/A20 共 27 个因子；**2026-10-10 经 L-B 定案后已全部清零**，见 §4.1）。
 「缺失值/预热/并列/ddof 等库级约定」即使论文未写，也按**已决策**处理（A1/A7/A8/A16/A18/A22/A23），
 因为它们不改变公式的含义，只是本库的显式工程约定——两类都写进本文档，但标签不同。
 
@@ -37,21 +37,21 @@
 | A1 | `stddev`/`covariance` 的 `ddof` | pandas 默认 1，numpy/vnpy `ts_std` 用 0 | **默认 1**（样本），只放行 0/1；`ddof=0` 对齐 vnpy（实测逐点一致） | L-C + pandas 对拍 + L-D（vnpy `ts_std` 用 0，但其 `cs_std` 用 1，**自身不一致**） | `test_a03/a04/a05/a22/a23` |
 | A2 | `ts_rank` 是否归一化 | 序号 1..n vs 名次/n vs (名次-1)/(n-1) | **默认 `pct=True`（名次/window ∈ (0,1]）**，可切序号 | L-C + 与 `scipy.stats.rankdata` 对拍 | `test_a10/a11` |
 | A3 | `rank` 是否 pct | ordinal vs pct | **默认 `pct=True`（名次/n ∈ (0,1]）** | L-C（§8.2 的判据文字） | `test_b01/b03` |
-| A4 | `ts_argmax`/`ts_argmin` 基准与方向 | 自窗口起点 1-based vs BRAIN「距今 0-based」 | **默认自窗口起点 1-based**（`basis` 可切）——论文未定义，但 **vnpy 实测同为 `arg_max()+1`**，默认获第二实现支持；BRAIN 文案仍待复核 | L-A 歧义 + **L-D 实测一致** | `test_a12`–`test_a16` + 差分 |
+| A4 | `ts_argmax`/`ts_argmin` 基准与方向 | 自窗口起点 1-based vs BRAIN「距今 0-based」 | ✅ **已定案（L-B）**：**默认 `days_ago`（今天=0）**，BRAIN 原文 *"If today's value is the maximum, returns 0"*；`window_start`（vnpy 的 `arg_max()+1`）保留为对齐选项。M3 时的默认（1-based）**与官方相反，已翻转** | **L-B 官方文档**（`operators.md` §3.3/§3.13）> L-D 实测 | `test_a12`–`test_a16` + 差分对齐开关 |
 | A5 | `scale` 轴向 | 逐日截面求和 vs 按列求和 | **`axis=1`（每日 Σ\|x\|=k）**；⚠️ 论文未写轴向，但 **vnpy `cs_scale` 实测同为每日截面** | L-A 歧义 + L-C 推断 + **L-D 实测一致** | `test_b05`–`test_b07` + 差分 |
 | A6 | 相关系数遇零方差序列 | NaN vs 0 vs inf | **NaN**（0/0 未定义，不伪装成观测） | L-C（数学定义） | `test_a20` |
 | A7 | `rank` 并列策略 | average / min / max / dense / first | **`average`**（生态默认），可显式切换。**M4 实测**：vnpy 的 `cs_rank` 取 `method="min"`（因子级对拍必须开这个对齐开关才逐点一致）⇒ 差异真实存在，但两者都是「论文未规定」的库级约定 | L-C（scipy/pandas 默认）+ L-D 实测 | `test_b02/a24`；`tools/factor_differential.py` |
 | A8 | 滚动预热期填充 | `min_periods=1` 填值 vs 严格 NaN | **严格：`min_periods=window`** | L-C（口径自定，关键是显式） | `test_a25/a26` |
 | A9 | 平移不变性的适用范围 | 「多数因子排序应不变」被误读成算子不变 | 算子层**不承诺**；仅 `rank` 单调平移下不变 | 设计文档 §6.5 的适用范围澄清 | `test_translation_is_not_guaranteed_...` |
 | A10 | `neutral` 是否有隐式截距 | 有的实现自动加常数项 | **不含隐式截距**（与论文 `X(XᵀX)⁻¹Xᵀ` 一致），需要就显式加全 1 面板 | L-A（论文公式） | `test_c10/c13` |
-| A11 | `decay_linear` 权重**列举顺序** | 「d, d–1, …, 1」按时间正序 vs 由近及远 | **末值权重最大**（默认），另提供 `order="oldest_first"`；⚠️ **vnpy 实测取相反方向**（最老权重最大）。**M4 定量确认**：22 个含 `decay_linear` 的可比因子必须开 `oldest_first` 对齐开关才能与 vnpy 一致 ⇒ 这是**实质口径差异**（会改变数值），不是数值噪声。涉及 **22 个因子**，未定案前不得 `verified`；最终裁决仍等 BRAIN `ts_decay_linear` 原文 | L-A 歧义 + L-D 实测相反 + 命名/WMA 惯例 | `test_a17/a18/a18b`；变异 `m3`；差分 D1；`docs/verification.md` §1.5 |
+| A11 | `decay_linear` 权重**列举顺序** | 「d, d–1, …, 1」按时间正序 vs 由近及远 | ✅ **已定案（L-B）**：BRAIN 原文 *"smoothing the data by **averaging recent values** and **reducing the impact of older or missing data**"* ⇒ **近期权重更大** = 本库默认；vnpy 的 `oldest_first` 与官方相反（记入 V18）。M4 曾定量确认「这 22 个可比因子必须开对齐开关才与 vnpy 一致」⇒ 差异是实质口径而非噪声 | **L-B 官方文档**（§3.13.1）+ L-D 实测相反 | `test_a17/a18/a18b`；变异 `m3`；`tools/factor_differential.py` |
 | A12 | 非整数窗口 `d` | 报错 vs `floor` vs 四舍五入 | **论文明确 `floor(d)`**（无歧义）→ 本库当前报错，**属已判定的偏离，待改码** | **L-A 明确** | `test_a27`（待改） |
 | A13 | `signedpower(x, a)` | `x^a` vs 保号幂 `sign(x)·\|x\|^a` | 待定（Alpha#1/#84 中 a=2 无差异） | L-A 字面 `x^a` vs L-D 实现惯例 | 待 M3 |
 | A14 | `adv{d}` 的 A 股映射 | `amount`（美元/元成交额）vs `volume`（股/手） | **取 `amount`**（论文逐字为 "average daily **dollar volume**"） | **L-A 明确** | 待 M3 因子层 |
 | A15 | 逐元素函数层（`abs`/`log`/`sign`） | 是否属于算子层 | **不属于算子层**，因子层交付 `elemwise`；`log(0/负)` → NaN（不产生 -inf） | L-A（论文列为函数而非算子） | ✅ M2 已交付：`tests/test_elemwise.py` |
 | A16 | `scale` 零和行的取值 | `0` vs `NaN` | **NaN**（0/0 未定义；拒绝把「无数据」伪装成 0）；⚠️ **vnpy 实测给 0** | L-C + 设计文档 §3.3 缺陷 7 的同类原则 | `test_b07`；差分 D5 |
 | A17 | `signedpower` 的指数可否是面板 | 常数 vs 表达式 | **两者都支持**：标量或同形面板（论文 Alpha#84 的指数是 `delta(close, …)`） | L-A（论文原文即是面板） | `test_signedpower_accepts_a_panel_exponent...` |
-| A20 | 论文中缀 `^` 的语义 | 论文字面 `x^a` vs 保号幂 `sign(x)·|x|^a` | **取保号幂**（负底数也能出值，与算子名自洽）；字面读法下 alpha90 会整片 NaN。**alpha48/alpha90 因此标 ambiguous**。M4 新增证据：vnpy 的 `pow1`（常数指数）**同样是保号幂**，第二实现与本题选择一致 | L-A（论文列了 `signedpower(x,a)=x^a` 但公式用 `^`）+ L-C + L-D | M4 差分（`tools/factor_differential.py`）；vnpy `pow2` 在「负底数 + 非整数指数」时返回 0，与本库的保号幂不同——但 101 个因子里 `^` 的底数全是 `rank(...)`（非负）⇒ 该分歧不会触发 |
+| A20 | 论文中缀 `^` 的语义 | 论文字面 `x^a` vs 保号幂 `sign(x)·|x|^a` | ✅ **已定案（L-B）**：BRAIN 把两个算子分开 —— `power(x,y)=x^y`（负底数 + **非整数**指数时**丢符号**）与 `signed_power`（保号）。论文中缀 `^` ⇒ **`power`**（本库新增 `elemwise.power`）；论文显式写 `SignedPower(...)` 的 Alpha#1/#84 ⇒ `signed_power`。**实质影响**：alpha48 的分母 `Σ((Δclose/delay)^2, 250)` 在负收益日必须得正，原先用保号幂会得到负的平方和并翻转因子符号 ⇒ **已修**；alpha90 的底数 `rank(...) ≥ 0`，两种读法同值 | **L-B 官方文档**（§3.13.1）+ L-C | `test_power_follows_brain_semantics_not_signed_power`；因子级差分（对齐 vnpy 的 `pow1`） |
 | A21 | `min/max` 两种语义 | 第二参数是数值 vs 表达式 | **数值 ⇒ 时序 `ts_min/ts_max`；表达式 ⇒ 逐元素 `minimum/maximum`**（101 条公式上无冲突，可机械核验） | L-A（论文只定义 `min(x,d)=ts_min(x,d)`） | `tools/conformance_report.py` 分类 + `test_elemwise` |
 | A22 | 逐元素 `min/max` 的缺失语义 | NaN 传播 vs 视为缺失 | **视为缺失**（`np.fmin/fmax`）：一侧 NaN 取另一侧 | L-C 决策（论文未定义）；理由是避免 `max(分支A,分支B)` 型因子整片退化 | `test_minimum_maximum_treat_nan_as_missing` |
 | A23 | 比较/逻辑的缺失语义 | C 语义 False vs NaN 传播 | **NaN 传播**；`\|\|` 取 Kleene 三值 | L-C 决策（论文未定义） | 条件型因子的不变量测试 |
@@ -88,11 +88,23 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 |---|---|---|---|
 | U1 | 「与原论文作者实现是否完全一致」 | 作者未公开代码；论文自称公式「也是计算机代码」但非官方标准 | 只能声明「与所选规范一致」 |
 | U2 | 论文的两个统计断言（平均持仓 0.6~6.4 天、两两相关 15.9%） | 需 WorldQuant 同源美股数据；A 股不可直接复现 | 仅作**弱参考**（§6.7） |
-| U3 | 与 BRAIN 平台的数值一致性 | 平台不接受外部代码、算子实现不可见、需登录 | 只做少数因子的**行为对齐**抽样（§2.3） |
+| U3 | 与 BRAIN 平台的数值一致性 | 平台不接受外部代码、算子实现不可见、需登录；**且算子文档的细节段（`Show more`）也无法获得** | ✅ 算子**定义文本**已入库（2026-10-10，L-B，`operators.md` §3.13）⇒ 三处语义歧义定案；但**数值一致性仍不可判定**，只做少数因子的行为对齐抽样（§2.3） |
 | U4 | 统计显著性 | 统计显著 ≠ 实现正确（§6.7 明文禁止） | 统计只作辅助，永不作为正确性证据 |
 | U5 | 19 个因子的**第三方差分** | vnpy 参照**未实现**这 19 个（18 个含 `IndNeutralize` + `alpha56` 无 `cap`）⇒ 无第二个独立实现可比 | 只能靠 L2 规范对照 + L4 不变量覆盖；在 `verification.md` §1.5 与 README 显式标注为验证边界（**不得**因此标 `verified` 的豁免） |
 
-## 4. M4 因子级差分的实测结论（对歧义清单的影响）
+## 4. M4 差分 + L-B 定案（对歧义清单的影响）
+
+### 4.1 L-B 定案（2026-10-10，`operators.md` §3.13）
+
+| 原歧义 | 定案依据（BRAIN 原文要点） | 结果 |
+|---|---|---|
+| **A4** argmax 基准 | "If today's value is the maximum, **returns 0**" | 默认翻转为 `days_ago`；6 个因子（1/57/60/96/98/100）随之定案 |
+| **A11** decay 方向 | "averaging **recent** values and reducing the impact of **older** data" | 本库默认正确；22 个因子定案 |
+| **A20** 中缀 `^` | `power`（可丢符号）与 `signed_power`（保号）是两个算子 | 论文 `^` → `power`；alpha48 修复、alpha90 两读法同值 |
+
+⇒ `ambiguous` 标签由 **27 个清零为 0**，101 个因子一律 `partial`（`verified` 仍待 M5 golden 快照）。
+
+### 4.2 M4 因子级差分实测（定案前的归因素材）
 
 对拍范围 **82/101**（19 个无参照，见 U5）；语义归一化后 **64 逐点一致 + 18 已归因 + 0 待查**。
 
@@ -109,7 +121,8 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 10 项歧义全部决策并绑定测试；因子层 7 类待决；4 项无法判定 |
-| **v0.6** | 2026-10-10 | M4：A7/A11 补实测证据（vnpy = `min` / `oldest_first`，需对齐开关才逐点一致）；新增 **U5**（19 个因子原理上无第三方参照）与 **§4 M4 实测结论**（82 个可比因子 0 待查、`pow1` 保号幂支持 A20 的默认选择） |
+| **v0.7** | 2026-10-10 | **L-B 定案**：A4（argmax 基准 → `days_ago`，默认翻转）、A11（decay 近期权重大）、A20（`^` → `power`）三处歧义结案，`ambiguous` 清零；U3 更新（算子定义已入库、数值一致性仍不可判定）；新增 §4.1 |
+| v0.6 | 2026-10-10 | M4：A7/A11 补实测证据（vnpy = `min` / `oldest_first`，需对齐开关才逐点一致）；新增 **U5**（19 个因子原理上无第三方参照）与 **§4 M4 实测结论**（82 个可比因子 0 待查、`pow1` 保号幂支持 A20 的默认选择） |
 | v0.5 | 2026-10-09 | M3 新增 A20（`^` 的两种读法 ⇒ alpha48/90 标 ambiguous）、A21（`min/max` 两种语义的消歧规则）、A22（逐元素 min/max 缺失语义）、A23（比较/逻辑缺失语义）、A24（IndClass 层级 → 申万 L1/L2/L3）；并写明 `ambiguous` 的判定标准（仅「论文未定且改变数值」才上标签） |
 | v0.4 | 2026-10-09 | 新增 A19（`cap` 用总市值还是流通市值：`rank` 型因子等价，但必须显式声明）；真实 A 股端到端见 `docs/verification.md` §1.3 |
 | v0.3 | 2026-10-09 | 加入 vnpy 差分实测：A1（vnpy `ts_std` ddof=0 且自身不一致）、A4（argmax 1-based 获 L-D 支持）、A5（`cs_scale` 同为每日截面）、**A11（`decay_linear` 方向与 vnpy 相反 ⇒ 22 因子的最高风险项）**；新增 A16（零和行 0 vs NaN）、A17（`signedpower` 指数可为面板）、A18（预热期策略 vs vnpy 的不一致）；A15 标记 M2 已交付 |

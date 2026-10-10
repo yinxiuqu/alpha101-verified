@@ -2,7 +2,7 @@
 
 分四层证据（`verified` 仍是 0/101：还缺 M4 因子级差分与 M5 golden 快照）：
 
-1. **注册完整性**：101 个因子全部登记，`paper_ref` 齐全，状态只有 `partial`/`ambiguous`；
+1. **注册完整性**：101 个因子全部登记，`paper_ref` 齐全，状态一律 `partial`（L-B 定案后无 ambiguous）；
 2. **可算 + 不产 ±inf**：每个因子在合成面板上跑通（含 250 日长窗口），形状与入参一致；
 3. **L4 不变量**：入参不可变、**时间截断一致性**（PIT 金标准，逐点相等）；
 4. **L2 规范对照**：调用 `tools/conformance_report.py`（论文公式 ↔ 实现 AST），必须 0 偏离。
@@ -25,12 +25,14 @@ ALL_NAMES = tuple(f"alpha{n}" for n in range(1, 102))
 FULL_DAYS = 320          # > 250 日最长窗口，保证长窗口因子也有值
 CUT_DAYS = 240
 
-#: 论文公式里出现这些算子的因子 ⇒ 规范本身未定（与 `factors.AMBIGUOUS_FACTORS` 必须一致）。
-EXPECTED_DECAY_AMBIGUOUS = {
+#: M3/M4 期间曾把 27 个因子标为 `ambiguous`（decay 方向 22 + argmax 基准 6 + `^` 语义 2，去重 27）。
+#: **2026-10-10 拿到 BRAIN 官方算子文档（L-B）后三条歧义全部定案**（`docs/operators.md` §3.13），
+#: 因此现在必须**一个 ambiguous 都没有**；下面这三个集合保留为「历史覆盖面」的证据。
+SETTLED_DECAY_FACTORS = {
     31, 39, 57, 58, 59, 63, 66, 71, 72, 73, 76, 77, 82, 87, 88, 89, 91, 92, 93, 96, 97, 98,
 }
-EXPECTED_ARG_AMBIGUOUS = {1, 57, 60, 96, 98, 100}
-EXPECTED_POW_AMBIGUOUS = {48, 90}
+SETTLED_ARG_FACTORS = {1, 57, 60, 96, 98, 100}
+SETTLED_POW_FACTORS = {48, 90}
 
 
 def make_panel(days: int = FULL_DAYS, names: int = 5, seed: int = 20261010) -> dict[str, pd.DataFrame]:
@@ -88,32 +90,29 @@ def test_all_101_factors_are_registered():
     for number, name in enumerate(ALL_NAMES, start=1):
         meta = registry.REGISTRY[name]
         assert meta.paper_ref.startswith(f"Appendix A, Alpha#{number}"), name
-        assert meta.status in {"partial", "ambiguous"}, name
+        assert meta.status == "partial", name
         assert registry.field_names(meta.func) == meta.params
 
 
-def test_ambiguous_status_follows_the_declared_rules():
-    """`ambiguous` 集合必须与论文公式里出现「未定案算子」的因子集合完全一致。"""
-    declared = {
-        "decay": set(factors.AMBIGUOUS_FACTORS[
-            "decay_linear 权重方向未定案（vnpy 取相反方向，BRAIN 文案未取得）"
-        ]),
-        "arg": set(factors.AMBIGUOUS_FACTORS[
-            "ts_argmax/ts_argmin 基准未定案（论文只写 which day，BRAIN 文案未取得）"
-        ]),
-        "pow": set(factors.AMBIGUOUS_FACTORS[
-            "`^` 语义（论文字面 x^a vs 保号幂）在此因子产生实质差异（负底数）"
-        ]),
-    }
-    assert declared["decay"] == EXPECTED_DECAY_AMBIGUOUS
-    assert declared["arg"] == EXPECTED_ARG_AMBIGUOUS
-    assert declared["pow"] == EXPECTED_POW_AMBIGUOUS
+def test_no_factor_is_ambiguous_after_the_brain_documentation():
+    """L-B 定案后 `ambiguous` 必须清零：三条歧义都有了官方原文依据（§3.13）。
 
-    expected_ambiguous = declared["decay"] | declared["arg"] | declared["pow"]
-    actual = {int(name[5:]) for name, meta in registry.REGISTRY.items() if meta.status == "ambiguous"}
-    assert actual == expected_ambiguous
-
-    # 其余因子一律 partial（**没有任何 verified**：六条门槛未全满足）
+    1. `ts_decay_linear` —— 「averaging **recent** values and reducing the impact of older...」
+       ⇒ 近期权重大（本库默认），涵盖 22 个因子；
+    2. `ts_arg_max/ts_arg_min` —— 「If **today's value is the maximum, returns 0**」
+       ⇒ 本库默认切到 BRAIN 的 `days_ago`，涵盖 6 个因子；
+    3. 中缀 `^` —— BRAIN 把 `power`（可丢符号）与 `signed_power`（保号）分为两个算子，论文的 `^`
+       对应 `power`，涵盖 2 个因子（alpha48 的负收益平方因此得正）。
+    """
+    assert factors.AMBIGUOUS_FACTORS == {}, "L-B 定案后不应再有 ambiguous 规则"
+    statuses = {meta.status for meta in registry.REGISTRY.values()}
+    assert statuses == {"partial"}, statuses
+    # 历史覆盖面对账：三组受影响的因子合计 27 个（去重后），现在全部落回 partial
+    settled = SETTLED_DECAY_FACTORS | SETTLED_ARG_FACTORS | SETTLED_POW_FACTORS
+    assert len(settled) == 27, sorted(settled)
+    for number in settled:
+        assert registry.REGISTRY[f"alpha{number}"].status == "partial"
+    # **没有任何 verified**：六条门槛里 L5 golden 快照未完成
     assert all(meta.status != "verified" for meta in registry.REGISTRY.values())
 
 
