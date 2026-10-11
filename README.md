@@ -7,12 +7,12 @@
 | 项 | 状态（2026-10-09） |
 |---|---|
 | 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**648** 个测试全绿（13 个文件）；7/7 变异注入被抓住 |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**655** 个测试全绿（14 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
-| 因子层 | ✅ **101/101 已实现**；状态 **`partial` 101** / `ambiguous` **0**（27 个已由 BRAIN 官方文档定案）/ `verified` **0**（六条门槛只剩 M5 golden 快照） |
+| 因子层 | ✅ **101/101 已实现**；状态 **`verified` 82 / `partial` 19 / `ambiguous` 0** —— 19 个缺「门槛 3 独立差分」（vnpy 未实现：18 个含 `IndNeutralize` + `alpha56` 需 `cap`），备注逐条写明 |
 | **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
 | 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**；✅ **L3 因子级差分 82 个可比因子 0 待查**；✅ L4 不变量全量通过；⛔ golden 快照（M5）未完成 |
-| `verified` 因子数 | **0/101**（六条门槛里只剩 L5 golden 快照（M5）未满足——诚实计数） |
+| `verified` 因子数 | **82/101**（§6.8 六条门槛全满足；其余 19 个缺「门槛 3 独立差分」⇒ 如实标 `partial`。设计文档曾预估 60~80） |
 | 许可 | **MIT**（clean-room，零 GPL 血缘；CI 有机械守卫） |
 
 ---
@@ -66,14 +66,47 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 层 | 内容 | 本仓库状态 |
 |---|---|---|
 | **L1 算子层** | 20 个算子的数学定义与权威实现对拍（pandas/scipy/statsmodels） | ✅ **已做**，20/20；见 `docs/operators.md` |
-| **L2 规范对照** | 论文附录公式 vs 实现 AST 逐节点比对 → 等价/近似/偏离 | ⛔ M3 |
+| **L2 规范对照** | 论文附录公式 vs 实现 AST 逐节点比对 → 等价/近似/偏离 | ✅ **101/101 等价、0 偏离**（`tools/conformance_report.py`） |
 | **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | ✅ **算子层 + 因子层均已做**：算子层 24 项；因子层 82 个可比因子 **0 待查**（`docs/verification.md` §1.5）；19 个无第三方参照 |
-| **L4 不变量与元测试** | 输入不可变性 / 时间截断一致性 / 未来扰动 / 缩放不变性 / **变异测试** | 🟡 **算子层已做**（`tests/test_invariants.py`、`tests/test_mutation.py`），因子层待 M2 |
-| **L5 golden 快照** | 固定种子面板上冻结 101 个因子输出，防回归 | ⛔ M5 |
+| **L4 不变量与元测试** | 输入不可变性 / 时间截断一致性 / 未来扰动 / 缩放不变性 / **变异测试** | ✅ **算子层 + 因子层均已做**（`tests/test_invariants.py`、`tests/test_factors_all.py` 306 项、8/8 变异注入被抓） |
+| **L5 golden 快照** | 固定种子面板上冻结 101 个因子输出，防回归 | ✅ **已入库**（`tests/golden/`：5×320 面板 + 101 因子输出 + sha256 + 环境版本，已接 CI） |
 | **L6 统计合理性** | IC 符号/衰减形状/暴露检查 | ⛔ 需因子与 A 股数据；**明文禁止用「IC 好看」证明代码正确** |
 
 **判据（设计文档 §6.8）**：六条门槛全满足才可标 `verified`；缺任一条标 `partial`/`ambiguous`。
-因为 L2/L3/L5 未做、因子未写，**当前 `verified` = 0/101**。这不是保守，而是本项目的立身之本。
+
+**终态：`verified` 82/101、`partial` 19/101、`ambiguous` 0。** 19 个 `partial` 全部是
+「vnpy 未实现 ⇒ 无第三方参照 ⇒ 门槛 3（必需）原理上不可满足」的因子
+（18 个含 `IndNeutralize` + `alpha56` 需 `cap`），备注里逐条写明缺哪条、为什么。
+设计文档 §6.8 的诚实预期是「`verified` 不可能是 101/101，预估 60~80」，实测 82。
+
+---
+
+## 一页复现（每条声明都能自己跑出来）
+
+```bash
+python -m pytest -q                                  # 655 项全绿（约 22 分钟）
+
+python tools/conformance_report.py                   # L2：期望「等价 101（共 101 个因子）」
+python tools/conformance_report.py --table           # 101 行偏差清单（docs/deviations.md §4 由此生成）
+
+bash tools/fetch_vnpy_reference.sh                   # L3：抓 vnpy 参照（SHA256 固定，进 gitignored 的 .vnpy-ref/）
+python tools/differential.py                         #      算子层 27 项：19 一致 + 8 已归因 + 0 待查
+python tools/factor_differential.py                  #      因子层 82 个可比因子：64 一致 + 18 已归因 + 0 待查
+
+python tools/golden_snapshot.py --check              # L5：与冻结基线比对（NaN 模式 + 数值）
+python -m pytest tests/test_golden.py -q             #      5 项
+
+python tools/real_panel_smoke.py --n-codes 120       # 真实 A 股端到端（需本地 MongoDB）
+
+python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必须全部被抓住
+```
+
+⚠️ **BRAIN 官方算子文档不在仓库里**（登录墙内的专有文档，`refs/` 已 gitignore）。
+要复核 L-B 结论（`ts_decay_linear` 方向、`ts_arg_max` 基准、`^` 的 `power`/`signed_power`、
+`rank`/`ts_rank` 归一化、`ts_std_dev` 的 ddof），需要你自己的会话：登录后
+`GET https://api.worldquantbrain.com/operators`（列表）与 `GET /operators/{name}`（完整正文，
+即页面 `Show more` 的内容）。所有引文与结论都写在 `docs/operators.md` §3.13 —— 
+即使拿不到文档，也能看到「依据什么、选择了什么、漏在哪」。
 
 ---
 
@@ -91,10 +124,10 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 入参一字未改（专治 §3.3 缺陷 2） | `tests/test_invariants.py::test_inputs_are_not_modified`（22 个调用点） |
 | 无前视（PIT 金标准） | `test_time_truncation_consistency`（19 个算子）+ `test_future_perturbation_does_not_change_past` |
 | 未用将被删除的 pandas API（原实现死于 `as_matrix`） | `test_no_deprecated_pandas_api_warnings`（22 个调用点在 `FutureWarning`/`DeprecationWarning` 转异常下运行，0 警告） |
-| 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：24 项中 18 项对齐后逐点一致（含 argmax 基准、ts_rank 口径、decay 方向对齐后） |
+| 算子层与第二实现（vnpy，MIT）逐点一致 | `tools/differential.py`：27 项中 **19 项对齐后逐点一致**，8 项为已归因口径差异（D1/D3–D8；原 D2「ddof」已因官方口径落地而消失） |
 | **101 个因子与论文公式结构一致** | `tools/conformance_report.py`：算子／字段／字面量三重对照 ⇒ **101/101 等价、0 偏离** |
 | **官方口径落地（L-B 算例）** | `rank`/`ts_rank` 归一化 `(名次−1)/(n−1) ∈ [0,1]`、`ts_std_dev` ddof=0、`ts_decay_linear` 稀疏 NaN→0 —— 四个官方算例已逐字进测试（`docs/operators.md` §3.1/§3.2/§3.12/§3.13.3） |
-| **BRAIN 完整算子文档（L-B，API 级）** | 66 个算子的**完整正文 + 官方算例**（本地语料 `refs/brain_operator_docs.md`，gitignored）：据此又定案 3 处默认口径差异（归一化 `[0,1]`、`ts_std_dev` ddof=0、decay 稀疏 NaN→0），**待落地**（`docs/operators.md` §3.13.3） |
+| **BRAIN 完整算子文档（L-B，API 级）** | 66 个算子的**完整正文 + 官方算例**（本地语料 `refs/brain_operator_docs.md`，gitignored）：三处默认口径**已落地**（归一化 `[0,1]`、`ts_std_dev` ddof=0、decay 稀疏 NaN→0），四个官方算例逐字进测试（`docs/operators.md` §3.13.3） |
 | **BRAIN 官方算子文档（L-B）定案** | `refs/WorldQuant_BRAIN.pdf`（登录墙内文档，gitignored）：`ts_decay_linear` 方向、`ts_arg_max/min` 基准（今天=0）、`^` 的 `power`/`signed_power` 之分 —— 原文引文见 `docs/operators.md` §3.13 |
 | **因子级与 vnpy 逐点一致** | `tools/factor_differential.py`：82 个可比因子 0 个「待查」（64 逐点一致 + 18 已归因：2 参照 bug、14 离散平局/数值病态、2 覆盖差异）；19 个因子无第三方参照 |
 | 全量因子的 PIT 与契约 | `tests/test_factors_all.py`：101 个因子逐一验证「可算不产 ±inf／入参不可变／时间截断一致性」 |
@@ -102,7 +135,10 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha5/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
 | 真实数据上契约与不变量成立 | `tests/test_adapters_real_data.py`（11 项）：面板契约、`vwap` 单位自洽、因子零 ±inf、PIT 行业中性化正交、真实数据时间截断一致性 |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
-| 测试套件不是摆设 | `tests/test_mutation.py`（7/7 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |
+| 测试套件不是摆设 | `tests/test_mutation.py`（**8/8** 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |
+| **golden 防回归（L5）** | `tests/test_golden.py` + `tools/golden_snapshot.py --check`：冻结 101 个因子输出，NaN 模式必须一致、数值 `allclose`；长窗口因子在基线上有值（选 5×320 而非 5×250 的理由可验证） |
+| 干净室纪律（比 GPL 更严的一例） | `YutaoWang03/Quant-Alpha101` 经只读 API 查证**未声明许可证**（`spdx_id: null`）⇒ 本项目对它既不参照也不对比（`docs/deviations.md` §1.1 第 8 行） |
+| 状态划分不是拍脑袋 | `tests/test_factors_all.py::test_verified_and_partial_split_follows_the_six_gates`：82/19 的划分与「无参照集合」逐一对齐，并与 `tools/factor_differential.py` 的 `NOT_COMPARABLE` 交叉断言 |
 | 零 GPL 血缘、运行时依赖只有 numpy/pandas/scipy | `tests/test_provenance.py`（源码 token 扫描 + 子进程 import 检查 + pyproject 解析） |
 | 面板契约（单位/前复权/pit 前提） | `tests/test_panel.py` + `src/alpha101v/panel.py` |
 
@@ -167,6 +203,7 @@ alpha101-verified/
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
 | **M2** | 5 个试点因子 + L2/L3/L4 首跑 | ✅ **完成**：`floor(d)`、`elemwise` 层、5 个试点因子（`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56`）、算子层 L3 差分、真实 A 股端到端。余项：L2 全量 AST 对照（M3）、因子级差分（M4） |
+| **M5** | golden 快照 + 状态终态 + 发布收尾 | ✅ **完成**：`tests/golden/`（5×320 冻结基线 + sha256 + 环境版本，已接 CI）、`verified` 82/101 |
 | **M4+L-B** | 因子级差分对拍 + BRAIN 官方文档定案 | ✅ **完成**：64 一致 + 18 已归因、**0 待查**；顺带实测出参照侧 `quesval2` 取反的 bug（`docs/verification.md` §1.5） |
 | M3 | 101 个因子 + 规范对照 + 偏差清单 | ✅ 完成：101/101 因子、L2 对照 101/101 等价、PIT 安全复权、偏差清单由工具生成（`docs/deviations.md` §4） |
 | M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |

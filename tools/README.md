@@ -6,6 +6,7 @@
 |---|---|---|
 | `differential.py` | ✅ **算子层已交付**（2026-10-09） | 双实现差分对拍：本库 vs vnpy（MIT，polars DSL）逐点 `allclose(rtol=1e-8)`，并对差异做归因分类（一致 / 口径差异 / 不一致待查），**严禁简单判错**（§6.4）。24 项：18 一致 + 6 归因 + 0 待查 |
 | `fetch_vnpy_reference.sh` | ✅ **已交付** | 下载 vnpy 的 `cs_function.py` / `ts_function.py` / `utility.py` / `datasets/alpha_101.py` 到 gitignored 的 `.vnpy-ref/`，逐文件校验 SHA256（**第三方代码不入库**） |
+| `golden_snapshot.py` | ✅ **已交付**（2026-10-11，M5） | **L5 golden 快照**：固定种子面板（5×320）上冻结 101 个因子输出（npz + sha256 清单 + 面板哈希 + 环境版本），`--check` 即门禁。判据 = **NaN 模式一致 + allclose 紧容差**；哈希不一致但数值一致只算「漂移提示」。⚠️ 只防回归、不证明正确性 |
 | `factor_differential.py` | ✅ **已交付**（2026-10-09，M4） | **因子级**差分：同一面板喂给本库 101 因子与 vnpy 的 82 条表达式，按 §6.4 做语义归一化后逐点比较，并把差异**自动归因**（一致 / 覆盖差异经截面算子传播 / 同值不同配 / 参照 quesval2 取反 / 待查）。附带发现：**vnpy 的 `quesval2` 与它自己的文档语义相反**（详见 `docs/verification.md` §1.5） |
 | `conformance_report.py` | ✅ **已交付**（2026-10-09） | 把论文附录公式解析成表达式树（完整词法 + 递归下降），与实现 AST 做**算子／字段／字面量**三重对照，输出 101 行偏差清单（当前 **101/101 等价、0 偏离**）。能力边界：算子级对照，不是完整数据流同构证明 |
 
@@ -16,6 +17,16 @@ bash tools/fetch_vnpy_reference.sh          # 取参照（需网络，约 1 秒/
 /home/yinxiuqu/anaconda3/envs/qa/bin/python tools/differential.py   # 打印对拍表；有待查项则退出码 1
 python -m pytest tests/test_differential.py -q                      # 测试包装（参照缺失时跳过）
 ```
+
+### golden 快照（M5）
+
+```bash
+python tools/golden_snapshot.py --check    # 校验当前实现与冻结基线（CI 门禁，退出码即结论）
+python tools/golden_snapshot.py --write    # 仅在**有意**改动算法/口径时重建，并在 PR 说明原因
+```
+
+基线内容与判据见 `tests/golden/README.md`；面板 5×320、种子 20261010
+（对设计文档 §6.6「5×250」示例的有意偏离：250 日是最长窗口，会整片 NaN）。
 
 ### 因子级差分（M4）
 

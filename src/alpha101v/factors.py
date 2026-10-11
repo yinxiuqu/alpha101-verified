@@ -1287,6 +1287,14 @@ def alpha101(close, Open, high, low):
 #:    对应 `power` ⇒ alpha48 的负收益平方得正（alpha90 的底数是 `rank(...)` ≥ 0，两种读法同值）。
 AMBIGUOUS_FACTORS: dict[str, tuple[int, ...]] = {}
 
+#: **无第三方参照**的 19 个因子：vnpy 参照未实现它们（18 个含 ``IndNeutralize`` + ``alpha56`` 需要 ``cap``），
+#: 因此设计文档 §6.8 的**门槛 3（独立实现逐点 allclose，必需）对它们在原理上不可满足**
+#: ⇒ 这 19 个只能标 ``partial``（说明缺哪条、为什么），其余 82 个可标 ``verified``。
+#: 该集合必须与 ``tools/factor_differential.py`` 的 ``NOT_COMPARABLE`` 一致（有测试守）。
+NO_THIRD_PARTY_REFERENCE: tuple[int, ...] = (
+    48, 56, 58, 59, 63, 67, 69, 70, 76, 79, 80, 82, 87, 89, 90, 91, 93, 97, 100,
+)
+
 #: 设计文档 §7.7 的 5 个试点因子（M2 交付，测试单独覆盖）。
 PILOT_NAMES: tuple[str, ...] = ("alpha101", "alpha4", "alpha5", "alpha41", "alpha56")
 
@@ -1311,15 +1319,29 @@ def _register_all() -> None:
             continue
         function: Callable[..., pd.DataFrame] = globals()[name]
         reason = ambiguous_reason(number)
+        if reason:
+            status, notes = "ambiguous", reason
+        elif number in NO_THIRD_PARTY_REFERENCE:
+            status = "partial"
+            notes = (
+                "设计文档 §6.8 六条门槛里 **缺门槛 3（独立实现逐点 allclose，必需）**："
+                "vnpy 参照未实现该因子（18 个含 IndNeutralize + alpha56 需 cap），L3 在原理上不可做。"
+                "其余门槛全部通过：L1 算子层 20/20、L2 规范对照等价、L4 不变量、"
+                "L5 golden 快照已入库（tests/golden/）、真实数据冒烟通过"
+            )
+        else:
+            status = "verified"
+            notes = (
+                "设计文档 §6.8 六条门槛全满足：L1 算子层 20/20、L2 规范对照 101/101 等价、"
+                "L3 因子级差分 0 待查（tools/factor_differential.py）、L4 不变量与截断一致性、"
+                "L5 golden 快照已入库（tests/golden/）、门槛 6 第三方对拍一致或已归因"
+            )
         registry.register(
             name,
             function,
             paper_ref=f"Appendix A, Alpha#{number}（逐字公式见 docs/paper_formulas.md §5）",
-            status="ambiguous" if reason else "partial",
-            notes=reason or (
-                "结构与论文一致（L2 对照等价）；算子层与因子层均已通过 vnpy 差分（M4）；"
-                "待 M5 golden 快照后方可 verified"
-            ),
+            status=status,
+            notes=notes,
         )
 
 

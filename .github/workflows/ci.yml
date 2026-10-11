@@ -30,5 +30,11 @@ jobs:
         run: python -m pytest tests/test_invariants.py tests/test_panel.py tests/test_registry.py -q
       - name: Mutation suite (each injected bug must be caught)
         run: python -m pytest tests/test_mutation.py -q
+      - name: L5 golden snapshot (drift guard, doc §6.6)
+        run: |
+          python tools/golden_snapshot.py --check
+          python -m pytest tests/test_golden.py -q
+      - name: L2 conformance vs paper formulas (doc §6.2)
+        run: python tools/conformance_report.py
       - name: Full suite
         run: python -m pytest -q

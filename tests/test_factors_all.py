@@ -2,7 +2,7 @@
 
 分四层证据（`verified` 仍是 0/101：还缺 M4 因子级差分与 M5 golden 快照）：
 
-1. **注册完整性**：101 个因子全部登记，`paper_ref` 齐全，状态一律 `partial`（L-B 定案后无 ambiguous）；
+1. **注册完整性**：101 个因子全部登记，`paper_ref` 齐全，状态只有 `verified`/`partial`（无 ambiguous）；
 2. **可算 + 不产 ±inf**：每个因子在合成面板上跑通（含 250 日长窗口），形状与入参一致；
 3. **L4 不变量**：入参不可变、**时间截断一致性**（PIT 金标准，逐点相等）；
 4. **L2 规范对照**：调用 `tools/conformance_report.py`（论文公式 ↔ 实现 AST），必须 0 偏离。
@@ -90,8 +90,41 @@ def test_all_101_factors_are_registered():
     for number, name in enumerate(ALL_NAMES, start=1):
         meta = registry.REGISTRY[name]
         assert meta.paper_ref.startswith(f"Appendix A, Alpha#{number}"), name
-        assert meta.status == "partial", name
+        assert meta.status in {"verified", "partial"}, name
         assert registry.field_names(meta.func) == meta.params
+
+
+def test_verified_and_partial_split_follows_the_six_gates():
+    """M5 终态：**82 个 `verified` / 19 个 `partial`**（设计文档 §6.8）。
+
+    `verified` 需六条门槛全满足；门槛 3（独立实现逐点 allclose）对 **19 个无第三方参照**的因子
+    （vnpy 未实现：18 个含 `IndNeutralize` + `alpha56` 需 `cap`）原理上不可做 ⇒ 它们只能 `partial`，
+    且备注里必须写明「缺哪条、为什么」。
+
+    设计文档 §6.8 曾预估 `verified` 为 60~80 个（诚实预期管理）；实测 82 个，其余 19 个如实标注。
+    """
+    verified = {int(n[5:]) for n, m in registry.REGISTRY.items() if m.status == "verified"}
+    partial = {int(n[5:]) for n, m in registry.REGISTRY.items() if m.status == "partial"}
+    assert len(verified) == 82 and len(partial) == 19, (len(verified), len(partial))
+    assert verified | partial == set(range(1, 102))
+    assert partial == set(factors.NO_THIRD_PARTY_REFERENCE)
+    for number in partial:
+        notes = registry.REGISTRY[f"alpha{number}"].notes
+        assert "门槛 3" in notes and "partial" not in notes.split("缺门槛 3")[0][-6:]
+    for number in verified:
+        assert "六条门槛全满足" in registry.REGISTRY[f"alpha{number}"].notes
+
+
+def test_no_reference_gap_set_matches_the_differential_tool():
+    """19 个「无参照」因子集合必须与 `tools/factor_differential.py` 的 `NOT_COMPARABLE` 一致（防漂移）。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_fd_gap", ROOT / "tools/factor_differential.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_fd_gap"] = module
+    spec.loader.exec_module(module)
+    assert set(module.NOT_COMPARABLE) == set(factors.NO_THIRD_PARTY_REFERENCE)
+    assert len(module.NOT_COMPARABLE) == 19
 
 
 def test_no_factor_is_ambiguous_after_the_brain_documentation():
@@ -106,14 +139,17 @@ def test_no_factor_is_ambiguous_after_the_brain_documentation():
     """
     assert factors.AMBIGUOUS_FACTORS == {}, "L-B 定案后不应再有 ambiguous 规则"
     statuses = {meta.status for meta in registry.REGISTRY.values()}
-    assert statuses == {"partial"}, statuses
-    # 历史覆盖面对账：三组受影响的因子合计 27 个（去重后），现在全部落回 partial
+    assert statuses == {"verified", "partial"}, statuses
+    # 历史覆盖面对账：三组受影响的因子合计 27 个（去重后）
+    # 歧义定案 ≠ 一定 verified：终态还取决于「有没有第三方参照」（§6.8 门槛 3）
     settled = SETTLED_DECAY_FACTORS | SETTLED_ARG_FACTORS | SETTLED_POW_FACTORS
     assert len(settled) == 27, sorted(settled)
     for number in settled:
-        assert registry.REGISTRY[f"alpha{number}"].status == "partial"
-    # **没有任何 verified**：六条门槛里 L5 golden 快照未完成
-    assert all(meta.status != "verified" for meta in registry.REGISTRY.values())
+        status = registry.REGISTRY[f"alpha{number}"].status
+        assert status in {"verified", "partial"}, (number, status)
+        if status == "partial":
+            assert number in factors.NO_THIRD_PARTY_REFERENCE, number
+    # 终态的 82/19 划分由 test_verified_and_partial_split_follows_the_six_gates 断言
 
 
 # ---------------------------------------------------------------------------

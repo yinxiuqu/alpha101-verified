@@ -27,7 +27,8 @@
 | 4 | `IndNeutralize` 逐日 `la.inv`，遇空行业/奇异矩阵 → `LinAlgError` | `ind_neutralize` 向量化分组（`bincount`，无求逆）；`neutral` 用 `lstsq`(SVD) | L-C；与 `statsmodels.OLS` 对拍 `rtol=1e-10` | `test_c02`、`test_c03`、`test_c10`、`test_c12` |
 | 5 | `ts_rank` 返回窗口末值**序号**，与截面 `rank` 的量纲混用 | `ts_rank` 与 `rank` 统一走同一套 `normalization`（2026-10-10 起默认为**官方** `zero_to_one`），量纲一致 | 设计文档 §3.3 缺陷 6 | `test_a10`、`test_a11`；变异 `m2`（`rank` 侧） |
 | 6 | 101 个因子几乎全部 `.fillna(0)` 收尾，缺失与真值 0 不可区分 | NaN 传播；需填充时必须显式（如 `returns_from_close(fill_first=True)`） | 设计文档 §3.3 缺陷 7 | `test_a25`、`test_a26`、`test_panel.py::test_returns_from_close_leaves_first_row_nan_by_default` |
-| 7 | 零测试、零基准值 | 219 个测试 + 7 个变异注入 + 权威实现逐点对拍 | §6.2/§8.4 | 全量 `pytest` |
+| 7 | 零测试、零基准值 | **655 个测试** + 8 个变异注入 + 权威实现逐点对拍 + L5 golden 快照 | §6.2/§8.4 | 全量 `pytest` |
+| 8 | 上表之外，设计文档 §4.3 还有一行「`YutaoWang03/Quant-Alpha101` 许可证：**待核**」 | ✅ **已核查（2026-10-11，只读 GitHub API 元数据，从未打开其代码）**：该仓库**未声明任何许可证**（`license.spdx_id = null`）⇒ 默认「保留所有权利」，**比 GPL 更严**（GPL 至少授予复制/修改权）。因此本项目对它**既不参照也不做本地数值对比** | 干净室纪律（设计文档 §4.5） | `tests/test_provenance.py`（零 GPL 血缘的机械守卫） |
 
 📌 第 4 条是生态级的差异点：vnpy（MIT）**整个算子缺失**、QAFactor **会崩**，
 两个主流实现都栽在 `IndNeutralize`（设计文档 §4.3.1、§10.3）。
@@ -224,7 +225,8 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 |---|---|---|
 | v0.1 | 2026-10-09 | 首版：算子层 7 项与原 GPL 实现的偏差、设计文档勘误 4 条、vnpy 差异 5 项待复核、101 行清单模板 |
 | **v0.3** | 2026-10-09 | §3 重写为**算子层已实地复核**：24 项对拍（18 一致 + 6 归因 + 0 待查），差异表 V1–V10（含 `decay_linear` 方向相反这一 22 因子最高风险项、`ts_argmax`/`ts_rank` 与本库一致、vnpy 不支持非整数窗口、因子级差分缺 talib/math_function） |
-| **v0.8** | 2026-10-10 | **V19–V21 全部落地**：归一化默认 `zero_to_one`、ddof 默认 0、`decay_linear` 默认稀疏；差分新增 D7/D7b/D8（D2 消失）；并新增一条由官方 `[0,1]` 闭区间引出的后果：`rank` 可取到 **0.0** ⇒ 比值型因子会除以 0，本库在因子输出边界把 ±inf 统一降级为 NaN（绝不加 epsilon） |
+| **v0.9** | 2026-10-11 | **M5 收尾**：§1.1 新增第 8 行——`YutaoWang03/Quant-Alpha101` 经只读 API 查证**未声明许可证**（`spdx_id: null`）⇒ 默认保留所有权利，本项目对它既不参照也不对比（设计文档 §4.3 的「待核」就此结案）；测试数更新为 655 |
+| v0.8 | 2026-10-10 | **V19–V21 全部落地**：归一化默认 `zero_to_one`、ddof 默认 0、`decay_linear` 默认稀疏；差分新增 D7/D7b/D8（D2 消失）；并新增一条由官方 `[0,1]` 闭区间引出的后果：`rank` 可取到 **0.0** ⇒ 比值型因子会除以 0，本库在因子输出边界把 ±inf 统一降级为 NaN（绝不加 epsilon） |
 | v0.7 | 2026-10-10 | **BRAIN 完整文档（API 级）入库**：§3.2 追加 V19–V21（归一化区间 / ddof / 稀疏 decay），均已由官方算例定案、**待落地** |
 | v0.6 | 2026-10-10 | **L-B 定案**：§3.2 追加 V16–V18（vnpy 的 argmax 基准、`pow` 保号、decay 方向都与 BRAIN 官方文档不同）⇒ 三条「vnpy 差异」现在都有了官方依据可判 |
 | v0.5 | 2026-10-10 | M4：新增 §3.2（V11–V15：vnpy 未实现的 19 个、`quesval2` 取反、窗口 round vs floor、`adv` 口径、min/max 与 pow2 的 NaN/0 策略）；因子级对拍 82/82 已判定（0 待查） |
