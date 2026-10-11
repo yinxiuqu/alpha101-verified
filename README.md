@@ -136,7 +136,7 @@ python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必
 | 真实数据上契约与不变量成立 | `tests/test_adapters_real_data.py`（11 项）：面板契约、`vwap` 单位自洽、因子零 ±inf、PIT 行业中性化正交、真实数据时间截断一致性 |
 | **L6 辅助统计（不是门槛）** | `tools/l6_statistics.py` + `reports/l6_summary.md`：60 只 × 359 日 A 股上跑完 101 个因子——平均 IC（h=1/2/3/5/10）**+0.0131/+0.0110/+0.0126/+0.0131/+0.0149**，两两 PnL 相关 **0.164**（4950 对，论文断言 15.9% 属**同量级弱参考**）。⚠️ 明文：不参与 `verified/partial` 判定，一个状态都没动 |
 | **L-B 文档语料（本地，gitignored）** | `tools/fetch_brain_docs.py` → `refs/brain_docs/`：算子完整正文 66（53 有详情页）、Learn 教程 17 页、数据集 150 个、数据字段 **4367** 个（含描述与数据集）+ 字段名总表 4545，均含 MD 与 PDF。**登录墙内的专有文档：只作本地依据，不提交、不分发** |
-| **BRAIN 行为对齐工具（补充证据）** | `tools/brain_alignment.py`：同表达式两边的日度 PnL 做**单调性**比较（Spearman），两条取数路径都**零配额**、且不接受命令行凭据；`--submit` 拒绝执行（不代耗配额）。⛔ **未完成且非工具问题**：该账号只有 **USA** 数据（`/data-sets?region=`：USA 150、GLB/EUR/ASI/CHN 全 0），拿不到 A 股平台结果 ⇒ 不同市场无法对齐（`docs/verification.md` §1.9） |
+| **BRAIN 行为对齐工具（补充证据）** | `tools/brain_alignment.py`：同表达式两边的日度 PnL 做**单调性**比较（Spearman），两条取数路径都**零配额**、且不接受命令行凭据；`--submit` 拒绝执行（不代耗配额）。⛔ **未完成且非工具问题**：该账号只有 **USA** 数据（`/data-sets?region=USA`=150；`CHINA`/`CHN`/`GLB`/`EUR`/`ASI` 全 0，两种拼写都试过）⇒ 拿不到 A 股平台结果、不同市场无法对齐。可用 `--check-region` 只读复验（退出码 3 = 无中国区数据；`docs/verification.md` §1.9） |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
 | 测试套件不是摆设 | `tests/test_mutation.py`（**8/8** 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |
 | **golden 防回归（L5）** | `tests/test_golden.py` + `tools/golden_snapshot.py --check`：冻结 101 个因子输出，NaN 模式必须一致、数值 `allclose`；长窗口因子在基线上有值（选 5×320 而非 5×250 的理由可验证） |

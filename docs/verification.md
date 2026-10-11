@@ -305,21 +305,33 @@ rank 值整体平移。判定规则：所有不一致格子都落在「当日有
 两条取数路径都是**零配额**：`--alpha-id`（读已有仿真）/ `--platform-pnl`（读导出的 PnL 文件）；
 `--submit` 会被拒绝执行（不代用户消耗配额）；凭据只从 `BRAIN_COOKIE` 或文件读。
 
-**状态：⛔ 被「数据权限」卡住（比会话过期更根本）**。2026-10-11 实测（两个独立证据）：
+**状态：⛔ 被「数据权限」卡住（比会话过期更根本）**。2026-10-11 实测（三条独立证据）：
 
 1. 会话层面：上一轮 JWT 于 00:50 过期 ⇒ `/users/self` 返回 401（用户随后提供了新会话，已恢复）；
-2. **权限层面（决定性）**：该账号**只有 USA 数据**——
-   `/data-sets?region=X` 的结果：**USA 150、GLB 0、EUR 0、ASI 0、CHN 0**；
-   `/data-fields?region=CHN&universe=…` 在 `TOP2000U/TOP1000U/TOP3000U/TOP2000A` 四种 universe 下**全是 count=0**，
-   而同一查询换 `region=USA` 得 4367。
+2. **权限层面（决定性）**：该账号**只有 USA 数据**。2026-10-11 用**新会话**复测（排除会话因素）：
+   * `/data-sets?region=USA` = **150**（对照组，证明区域过滤本身有效）；
+   * `/data-sets?region=CHINA` = **0**、`region=CHN` = **0**（**两种拼写都试过**——平台 UI 用 `CHN`，
+     而 WQB 等第三方库用 `CHINA`，因此不能只试一种）；
+   * `/data-fields?region=CHN&universe=…` 在 `TOP2000U/TOP1000U/TOP3000U/TOP2000A` 下**全是 count=0**，
+     不带 universe 则报 `Invalid query`（该接口强制要求完整上下文）；
+   * `region=GLB/EUR/ASI` 也都是 0。
+   这与平台规则一致：**欧洲与亚洲市场仅对部分研究顾问开放**，普通账户拿不到中国区数据。
 
 ⇒ 平台侧**只能产出美股 PnL**，而本库的数据是 A 股 ⇒ **「同一市场」这个前提不成立**，
 按设计文档 §2.3 的原意（同表达式、同市场、比单调性）**无法完成**，不是差一步、而是缺一项权限。
 `/simulations` 也确认只接受 POST（即任何平台侧仿真都要消耗配额）。
 
-**要真正收口需要**：① 给账号开通 CHN 数据（或换一个含 CHN 的账号/机构账号），或
-② 提供同源美股数据以在本库侧复现美股 PnL，然后任选 `--alpha-id` / `--platform-pnl`。
+**可复验（只读、不消耗配额）**：`python tools/brain_alignment.py --check-region` 会打印
+``USA / CHINA / CHN`` 三个区域的数据集数并给出退出码（**0 = 有中国市场；3 = 没有**）。
+用户侧还可以按平台自己的三处核对：Settings 的 Region 下拉是否有 China、账户是否为
+Research Consultant / 特定竞赛参与者、以及在 WQB 里用 `region='CHINA'` 搜数据集。
+
+**要真正收口只有两条路**：① 给账号开通中国区数据（成为研究顾问或参加相应竞赛），或
+② 提供同源美股数据，让本库侧复现美股 PnL，然后任选 `--alpha-id` / `--platform-pnl` 收口。
 在拿到其中任一之前，本项**保持未完成**，不写成「已验证」——这是设计文档 §6.4「严禁简单判错」的同一条纪律。
+
+📌 **顺带记录的平台工程细节**：连抓 400+ 请求会触发 ``{"message":"API rate limit exceeded"}``
+（实测），`tools/fetch_brain_docs.py` 因此内置 0.35 s 间隔 + 遇 429 按 5/15/45/90 s 退避重试。
 
 ### 1.10 L-B 文档语料（本地，gitignored）
 

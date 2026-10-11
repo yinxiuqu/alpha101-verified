@@ -44,9 +44,10 @@ python tools/brain_alignment.py --factor alpha5 --platform-pnl pnl.csv   # 与�
 BRAIN_COOKIE='t=...' python tools/brain_alignment.py --factor alpha5 --alpha-id <id>  # 读已有仿真（零配额）
 ```
 
-⛔ **行为对齐目前被数据权限卡住**：该账号只有 USA 数据（`/data-sets?region=X`：USA 150，GLB/EUR/ASI/CHN 全 0），
-而本库是 A 股 ⇒ 没有「同一市场」的可比结果。拿到 CHN 权限或同源美股数据后，用
-`--alpha-id` / `--platform-pnl` 即可收口（详见 `docs/verification.md` §1.9）。
+⛔ **行为对齐目前被数据权限卡住**：该账号只有 USA 数据（`/data-sets?region=USA`=150；
+`CHINA`/`CHN`/`GLB`/`EUR`/`ASI` 全 0，两种拼写都试过），而本库是 A 股 ⇒ 没有「同一市场」的可比结果。
+**只读复验**：`python tools/brain_alignment.py --check-region`（不消耗配额；退出码 3 = 无中国区数据）。
+拿到中国区权限或同源美股数据后，用 `--alpha-id` / `--platform-pnl` 即可收口（详见 `docs/verification.md` §1.9）。
 
 两者都**不进入 L1–L5 门禁、不改变任何因子状态**：
 L6 的纪律写在设计文档 §6.7（统计显著 ≠ 实现正确）；行为对齐的边界写在本工具文档串

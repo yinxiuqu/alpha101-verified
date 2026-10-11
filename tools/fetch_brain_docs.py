@@ -17,6 +17,8 @@
 --------------
 * cookie **只从环境变量 `BRAIN_COOKIE` 或 `--cookie-file` 读**，不接受命令行参数（避免进 shell 历史）；
   本工具**不打印、不保存**凭据；
+* **平台有速率限制**（实测：连抓 400+ 请求后会回 ``{"message":"API rate limit exceeded"}``）
+  ⇒ 默认每次请求间隔 0.35 s，遇 429 按 5/15/45/90 s 退避重试；全量抓取约 300 次请求、耗时数分钟；
 * 抓下来的内容是**登录墙内的专有文档**，默认落在 ``refs/``（本仓库已 gitignore）：
   **只作本地规范依据，绝不提交进仓库、绝不二次分发**。要对外引用请只引用必要的短句并注明来源。
 
@@ -47,7 +49,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 API = "https://api.worldquantbrain.com"
 OUT_DIR = ROOT / "refs" / "brain_docs"
 SECTIONS = ("operators", "tutorials", "datasets", "datafields")
-SLEEP_SECONDS = 0.15
+SLEEP_SECONDS = 0.35
+#: 平台限流时的退避（实测：连抓 400+ 请求后会返回 {"message":"API rate limit exceeded"}）
+BACKOFF_SECONDS = (5, 15, 45, 90)
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +87,12 @@ def request_json(
             with urllib.request.urlopen(request, timeout=45) as response:  # noqa: S310
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                wait = BACKOFF_SECONDS[min(attempt, len(BACKOFF_SECONDS) - 1)]
+                print(f"  ⏳ 触发平台限流，退避 {wait}s 后重试（{url}）", flush=True)
+                time.sleep(wait)
+                last_error = exc
+                continue
             if allow_missing and exc.code in (400, 404):
                 return None
             if exc.code == 401:

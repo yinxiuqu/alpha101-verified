@@ -169,9 +169,58 @@ def local_pnl(factor_name: str, n_codes: int, start: str, end: str) -> tuple[pd.
     return pnl, meta
 
 
+#: 平台对区域参数的写法不统一（UI/文档里 CHN、WQB 库里 CHINA）⇒ 两种都探。
+REGION_SPELLINGS = ("CHINA", "CHN")
+
+
+def check_regions(cookie: str) -> int:
+    """**只读**自检：哪些区域在该账号下有数据（不消耗任何仿真配额）。
+
+    返回码：0 = 至少一个中国市场拼写有数据；3 = 没有任何中国区数据（本对齐的前提不成立）。
+    """
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    def count(url: str) -> str:
+        request = urllib.request.Request(
+            f"{API}{url}",
+            headers={
+                "Accept": "application/json;version=2.0",
+                "Referer": "https://platform.worldquantbrain.com/",
+                "Cookie": cookie,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+                return str(json.loads(response.read().decode("utf-8")).get("count"))
+        except Exception as exc:  # noqa: BLE001
+            return f"错误（{exc}）"
+
+    print("区域可用性自检（只读，不消耗配额）：")
+    rows = [("USA（对照）", count("/data-sets?region=USA&limit=1"))]
+    rows += [
+        (f"region={spelling}", count(f"/data-sets?region={spelling}&limit=1"))
+        for spelling in REGION_SPELLINGS
+    ]
+    for label, value in rows:
+        print(f"  {label:<24} 数据集数 = {value}")
+    china = rows[1:]
+    if any(value not in ("0", "None") and not value.startswith("错误") for _, value in china):
+        print("\n✅ 存在中国市场数据 ⇒ 行为对齐可以继续（用 --alpha-id / --platform-pnl 收口）")
+        return 0
+    print(
+        "\n⛔ 没有任何中国区数据（CHINA/CHN 都是 0）⇒ 「同一市场」前提不成立，行为对齐无法完成。\n"
+        "   这不是工具问题：平台只在*部分*区域对特定账户开放数据（欧亚市场通常仅研究顾问可见），\n"
+        "   本库的本地数据是 A 股，平台侧只能出美股 ⇒ 不同市场不可比较。见 docs/verification.md §1.9。"
+    )
+    return 3
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="BRAIN 行为对齐抽样（不是 L3 差分）")
-    parser.add_argument("--factor", required=True, help="因子名，如 alpha5")
+    parser.add_argument("--factor", help="因子名，如 alpha5（--check-region 时不需要）")
+    parser.add_argument("--check-region", action="store_true",
+                        help="只读自检：本账号哪些区域有数据（不消耗仿真配额）")
     parser.add_argument("--n-codes", type=int, default=120)
     parser.add_argument("--start", default="2023-01-03")
     parser.add_argument("--end", default="2024-06-28")
@@ -182,6 +231,17 @@ def main() -> int:
     parser.add_argument("--i-understand-this-uses-my-quota", action="store_true")
     parser.add_argument("--out-dir", default=str(OUT_DIR))
     args = parser.parse_args()
+
+    if args.check_region:
+        cookie = os.environ.get("BRAIN_COOKIE", "")
+        if not cookie and args.cookie_file:
+            cookie = pathlib.Path(args.cookie_file).read_text(encoding="utf-8").strip()
+        if not cookie:
+            parser.error("需要 BRAIN_COOKIE 环境变量或 --cookie-file")
+        return check_regions(cookie)
+
+    if not args.factor:
+        parser.error("需要 --factor（或用 --check-region 只做区域自检）")
 
     if args.submit and not args.i_understand_this_uses_my_quota:
         parser.error(
