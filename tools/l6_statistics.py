@@ -155,11 +155,11 @@ def factor_pnl(factor: pd.DataFrame, forward_return: pd.DataFrame) -> pd.Series:
     return product.sum(axis=1, min_count=1) / factor_z.notna().sum(axis=1).replace(0, np.nan)
 
 
-def average_pairwise_pnl_correlation(pnls: dict[str, pd.Series]) -> tuple[float, int]:
-    """所有因子对之间的 PnL 相关均值（对照论文 15.9% 的弱参考）。"""
+def pairwise_pnl_correlations(pnls: dict[str, pd.Series]) -> pd.DataFrame:
+    """所有因子对之间的 PnL 相关（长表：factor_a / factor_b / corr），供复核与画图。"""
     names = sorted(pnls)
     frame = pd.DataFrame({name: pnls[name] for name in names}).dropna(how="all")
-    correlations: list[float] = []
+    rows: list[dict[str, object]] = []
     for i, left in enumerate(names):
         for right in names[i + 1 :]:
             pair = frame[[left, right]].dropna()
@@ -167,8 +167,14 @@ def average_pairwise_pnl_correlation(pnls: dict[str, pd.Series]) -> tuple[float,
                 continue
             value = pair[left].corr(pair[right])
             if np.isfinite(value):
-                correlations.append(float(value))
-    return (float(np.mean(correlations)) if correlations else np.nan), len(correlations)
+                rows.append({"factor_a": left, "factor_b": right, "corr": float(value), "days": int(pair.shape[0])})
+    return pd.DataFrame(rows)
+
+
+def average_pairwise_pnl_correlation(pnls: dict[str, pd.Series]) -> tuple[float, int]:
+    """所有因子对之间的 PnL 相关均值（对照论文 15.9% 的弱参考）。"""
+    table = pairwise_pnl_correlations(pnls)
+    return (float(table["corr"].mean()) if not table.empty else np.nan), int(table.shape[0])
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +264,11 @@ def main() -> int:
     csv_path = out_dir / "l6_ic.csv"
     table.to_csv(csv_path, index=False)
 
-    mean_pairwise, pairs = average_pairwise_pnl_correlation(pnls)
+    pairwise = pairwise_pnl_correlations(pnls)
+    pairwise_path = out_dir / "l6_pairwise_corr.csv"
+    pairwise.to_csv(pairwise_path, index=False)
+    mean_pairwise = float(pairwise["corr"].mean()) if not pairwise.empty else np.nan
+    pairs = int(pairwise.shape[0])
     mean_ic_by_horizon = {h: float(table[f"ic{h}_mean"].mean()) for h in HORIZONS}
     best_horizon = max(mean_ic_by_horizon, key=lambda h: abs(mean_ic_by_horizon[h]))
     report_path = out_dir / "l6_summary.md"
@@ -315,7 +325,7 @@ def main() -> int:
     ]
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
-    print(f"逐年表已写入 {csv_path}")
+    print(f"逐年表已写入 {csv_path}；两两相关分布已写入 {pairwise_path}")
     print(f"报告已写入 {report_path}")
     print(f"平均 IC（h=1/2/3/5/10）：" + " / ".join(f"{mean_ic_by_horizon[h]:+.4f}" for h in HORIZONS))
     print(f"两两相关均值（弱参考，论文 15.9%）：{mean_pairwise:.3f}（{pairs} 对）")
