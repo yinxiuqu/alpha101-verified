@@ -6,6 +6,9 @@
 |---|---|---|
 | `differential.py` | ✅ **算子层已交付**（2026-10-09） | 双实现差分对拍：本库 vs vnpy（MIT，polars DSL）逐点 `allclose(rtol=1e-8)`，并对差异做归因分类（一致 / 口径差异 / 不一致待查），**严禁简单判错**（§6.4）。24 项：18 一致 + 6 归因 + 0 待查 |
 | `fetch_vnpy_reference.sh` | ✅ **已交付** | 下载 vnpy 的 `cs_function.py` / `ts_function.py` / `utility.py` / `datasets/alpha_101.py` 到 gitignored 的 `.vnpy-ref/`，逐文件校验 SHA256（**第三方代码不入库**） |
+| `fetch_brain_docs.py` | ✅ **已交付**（2026-10-11） | 一次性抓取 BRAIN 平台文档 → MD（+PDF）：算子 66 条（完整正文 + 官方算例）、Learn 教程 17 页、数据集 150 个、数据字段 4367 个（含描述/数据集）。落 `refs/`（gitignored）：**专有文档，不提交、不分发**；cookie 只走环境变量 |
+| `brain_alignment.py` | ✅ **已交付**（2026-10-11） | **BRAIN 行为对齐抽样**（补充证据，不是 L3）：同表达式在本库与平台各出一条日度 PnL，比较**单调性**（Spearman）而非数值相等。两条取数路径都**零配额**（`--alpha-id` 读已有仿真 / `--platform-pnl` 读导出文件）；`--submit` 会拒绝执行（不代你消耗配额）。凭据只从 `BRAIN_COOKIE` 或文件读，**不接受命令行 cookie** |
+| `l6_statistics.py` | ✅ **已交付**（2026-10-11） | **L6 辅助统计**（**不是门槛**）：横截面 Spearman IC（h=1/2/3/5/10）、IC 衰减形状、市值/行业暴露、因子两两 PnL 相关。⚠️ 明文：统计显著 ≠ 实现正确，不参与 `verified/partial` 判定；A 股 ≠ 美股 |
 | `golden_snapshot.py` | ✅ **已交付**（2026-10-11，M5） | **L5 golden 快照**：固定种子面板（5×320）上冻结 101 个因子输出（npz + sha256 清单 + 面板哈希 + 环境版本），`--check` 即门禁。判据 = **NaN 模式一致 + allclose 紧容差**；哈希不一致但数值一致只算「漂移提示」。⚠️ 只防回归、不证明正确性 |
 | `factor_differential.py` | ✅ **已交付**（2026-10-09，M4） | **因子级**差分：同一面板喂给本库 101 因子与 vnpy 的 82 条表达式，按 §6.4 做语义归一化后逐点比较，并把差异**自动归因**（一致 / 覆盖差异经截面算子传播 / 同值不同配 / 参照 quesval2 取反 / 待查）。附带发现：**vnpy 的 `quesval2` 与它自己的文档语义相反**（详见 `docs/verification.md` §1.5） |
 | `conformance_report.py` | ✅ **已交付**（2026-10-09） | 把论文附录公式解析成表达式树（完整词法 + 递归下降），与实现 AST 做**算子／字段／字面量**三重对照，输出 101 行偏差清单（当前 **101/101 等价、0 偏离**）。能力边界：算子级对照，不是完整数据流同构证明 |
@@ -17,6 +20,37 @@ bash tools/fetch_vnpy_reference.sh          # 取参照（需网络，约 1 秒/
 /home/yinxiuqu/anaconda3/envs/qa/bin/python tools/differential.py   # 打印对拍表；有待查项则退出码 1
 python -m pytest tests/test_differential.py -q                      # 测试包装（参照缺失时跳过）
 ```
+
+### 抓取 BRAIN 平台文档（本地语料）
+
+```bash
+BRAIN_COOKIE='t=...' python tools/fetch_brain_docs.py            # 默认全抓 → refs/brain_docs/*.md
+BRAIN_COOKIE='t=...' python tools/fetch_brain_docs.py --pdf      # 额外渲染 PDF（pandoc+xelatex，chromium 兜底）
+BRAIN_COOKIE='t=...' python tools/fetch_brain_docs.py --only datafields
+```
+
+抓 `/operators`(+`/{name}`)、`/tutorials`(+`/tutorial-pages/{id}`)、`/data-sets`、`/data-fields/summary`
+与 `/data-fields`（后者**必须带完整上下文**，否则 `Invalid query`）。
+**不抓** `/research`（那是社区帖检索，不是文档）与运营内容。
+
+### L6 辅助统计与 BRAIN 行为对齐（补充证据层）
+
+```bash
+python tools/l6_statistics.py --n-codes 120            # 真实 A 股上跑 101 个因子的 IC/暴露/两两相关
+python tools/l6_statistics.py --factors 4,5,101        # 少数因子快速核查
+
+python tools/brain_alignment.py --factor alpha5        # 只算本地基线（不需要任何凭据）
+python tools/brain_alignment.py --factor alpha5 --platform-pnl pnl.csv   # 与平台导出的 PnL 对比（零配额）
+BRAIN_COOKIE='t=...' python tools/brain_alignment.py --factor alpha5 --alpha-id <id>  # 读已有仿真（零配额）
+```
+
+⛔ **行为对齐目前被数据权限卡住**：该账号只有 USA 数据（`/data-sets?region=X`：USA 150，GLB/EUR/ASI/CHN 全 0），
+而本库是 A 股 ⇒ 没有「同一市场」的可比结果。拿到 CHN 权限或同源美股数据后，用
+`--alpha-id` / `--platform-pnl` 即可收口（详见 `docs/verification.md` §1.9）。
+
+两者都**不进入 L1–L5 门禁、不改变任何因子状态**：
+L6 的纪律写在设计文档 §6.7（统计显著 ≠ 实现正确）；行为对齐的边界写在本工具文档串
+（平台只返回表现、不返回因子矩阵；且两侧必须**同一市场**，本库是 A 股 ⇒ 平台侧须选 CHN）。
 
 ### golden 快照（M5）
 

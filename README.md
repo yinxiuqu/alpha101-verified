@@ -7,7 +7,7 @@
 | 项 | 状态（2026-10-09） |
 |---|---|
 | 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**655** 个测试全绿（14 个文件）；7/7 变异注入被抓住 |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**671** 个测试全绿（16 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
 | 因子层 | ✅ **101/101 已实现**；状态 **`verified` 82 / `partial` 19 / `ambiguous` 0** —— 19 个缺「门槛 3 独立差分」（vnpy 未实现：18 个含 `IndNeutralize` + `alpha56` 需 `cap`），备注逐条写明 |
 | **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
@@ -70,7 +70,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 | **L3 双实现差分** | 本库 vs vnpy（polars DSL），逐点 `allclose(rtol=1e-8)` | ✅ **算子层 + 因子层均已做**：算子层 24 项；因子层 82 个可比因子 **0 待查**（`docs/verification.md` §1.5）；19 个无第三方参照 |
 | **L4 不变量与元测试** | 输入不可变性 / 时间截断一致性 / 未来扰动 / 缩放不变性 / **变异测试** | ✅ **算子层 + 因子层均已做**（`tests/test_invariants.py`、`tests/test_factors_all.py` 306 项、8/8 变异注入被抓） |
 | **L5 golden 快照** | 固定种子面板上冻结 101 个因子输出，防回归 | ✅ **已入库**（`tests/golden/`：5×320 面板 + 101 因子输出 + sha256 + 环境版本，已接 CI） |
-| **L6 统计合理性** | IC 符号/衰减形状/暴露检查 | ⛔ 需因子与 A 股数据；**明文禁止用「IC 好看」证明代码正确** |
+| **L6 统计合理性** | IC 符号/衰减形状/暴露检查 | 🟡 **已跑（辅助，非门槛）**：`tools/l6_statistics.py`（结果见 `reports/l6_summary.md`）。**明文：统计不参与 `verified` 判定**，A 股 ≠ 美股只作弱参考 |
 
 **判据（设计文档 §6.8）**：六条门槛全满足才可标 `verified`；缺任一条标 `partial`/`ambiguous`。
 
@@ -84,7 +84,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 ## 一页复现（每条声明都能自己跑出来）
 
 ```bash
-python -m pytest -q                                  # 655 项全绿（约 22 分钟）
+python -m pytest -q                                  # 671 项全绿（约 23 分钟）
 
 python tools/conformance_report.py                   # L2：期望「等价 101（共 101 个因子）」
 python tools/conformance_report.py --table           # 101 行偏差清单（docs/deviations.md §4 由此生成）
@@ -134,6 +134,9 @@ python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必
 | 复权修正除权日假跳空 | `tests/test_adjust.py`（11 项）+ `tests/test_adapters_real_data.py`（真实数据 35.11% → 7.60%） |
 | 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha5/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
 | 真实数据上契约与不变量成立 | `tests/test_adapters_real_data.py`（11 项）：面板契约、`vwap` 单位自洽、因子零 ±inf、PIT 行业中性化正交、真实数据时间截断一致性 |
+| **L6 辅助统计（不是门槛）** | `tools/l6_statistics.py` + `reports/l6_summary.md`：60 只 × 359 日 A 股上跑完 101 个因子——平均 IC（h=1/2/3/5/10）**+0.0131/+0.0110/+0.0126/+0.0131/+0.0149**，两两 PnL 相关 **0.164**（4950 对，论文断言 15.9% 属**同量级弱参考**）。⚠️ 明文：不参与 `verified/partial` 判定，一个状态都没动 |
+| **L-B 文档语料（本地，gitignored）** | `tools/fetch_brain_docs.py` → `refs/brain_docs/`：算子完整正文 66（53 有详情页）、Learn 教程 17 页、数据集 150 个、数据字段 **4367** 个（含描述与数据集）+ 字段名总表 4545，均含 MD 与 PDF。**登录墙内的专有文档：只作本地依据，不提交、不分发** |
+| **BRAIN 行为对齐工具（补充证据）** | `tools/brain_alignment.py`：同表达式两边的日度 PnL 做**单调性**比较（Spearman），两条取数路径都**零配额**、且不接受命令行凭据；`--submit` 拒绝执行（不代耗配额）。⛔ **未完成且非工具问题**：该账号只有 **USA** 数据（`/data-sets?region=`：USA 150、GLB/EUR/ASI/CHN 全 0），拿不到 A 股平台结果 ⇒ 不同市场无法对齐（`docs/verification.md` §1.9） |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
 | 测试套件不是摆设 | `tests/test_mutation.py`（**8/8** 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |
 | **golden 防回归（L5）** | `tests/test_golden.py` + `tools/golden_snapshot.py --check`：冻结 101 个因子输出，NaN 模式必须一致、数值 `allclose`；长窗口因子在基线上有值（选 5×320 而非 5×250 的理由可验证） |
