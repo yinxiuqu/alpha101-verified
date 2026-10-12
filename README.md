@@ -141,6 +141,7 @@ python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必
 | ~~美股验证的原始阻塞（历史记录）~~ | `tools/us_data_verification.py`（取数→验证→**删除+审计**）+ `tools/factor_differential.py --panel-file`。实测该 tushare 账号 `us_daily` 限 **1 次/小时**、复权接口**无权限**、且无行业字段 ⇒ 本轮如实记「未完成」；删除审计见 `reports/us_data_audit.md`（`docs/verification.md` §1.11） |
 | **给使用者的实践指南** | `docs/usage.md`（安装 → 五分钟上手 → 接自己的数据 → 字段不够怎么办 → 口径 → 自查 → 性能 → 常见问题）+ `examples/hello_alpha101.py`、`examples/from_my_csv.py`（都可直接跑） |
 | **L-B 文档语料（本地，gitignored）** | `tools/fetch_brain_docs.py` → `refs/brain_docs/`：算子完整正文 66（53 有详情页）、Learn 教程 17 页、数据集 150 个、数据字段 **4367** 个（含描述与数据集）+ 字段名总表 4545，均含 MD 与 PDF。**登录墙内的专有文档：只作本地依据，不提交、不分发** |
+| **第二独立参照差分（MIT）** | `tools/second_reference_differential.py`：对拍 19 个 `partial` 因子（第一参照 vnpy 未实现它们）。已证明两处参照侧口径偏离（并列取号、窗口不足 0-vs-NaN），一条归因被**证伪**（小数窗口）⇒ **19 个状态不升级**。结果表 `reports/second_reference_diff.csv`（`verification.md` §1.12） |
 | **BRAIN 行为对齐工具（补充证据）** | `tools/brain_alignment.py`：同表达式两边的日度 PnL 做**单调性**比较（Spearman），两条取数路径都**零配额**、且不接受命令行凭据；`--submit` 拒绝执行（不代耗配额）。⛔ **未完成且非工具问题**：该账号只有 **USA** 数据（`/data-sets?region=USA`=150；`CHINA`/`CHN`/`GLB`/`EUR`/`ASI` 全 0，两种拼写都试过）⇒ 拿不到 A 股平台结果、不同市场无法对齐。可用 `--check-region` 只读复验（退出码 3 = 无中国区数据；`docs/verification.md` §1.9） |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
 | 测试套件不是摆设 | `tests/test_mutation.py`（**8/8** 注入被抓住）+ 前视对照实验 `test_truncation_consistency_has_teeth_...` |

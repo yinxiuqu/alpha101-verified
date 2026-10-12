@@ -20,3 +20,6 @@ venv/
 refs/
 # 参照实现（vnpy / alpha101-pipeline 等）：只在测试期用，绝不入库
 .refs/
+
+# 公众号流水线的密钥文件（只放密钥，绝不入库）
+aws.env
