@@ -23,7 +23,11 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install "numpy>=1.26" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" pytest statsmodels
+          # 运行时依赖只有 numpy/pandas/scipy；下面三个是**测试期**需要：
+          # pymongo（真实数据适配器测试，无数据库时自动 skip）、pyarrow（parquet 快照/报告）、
+          # matplotlib（使用指南示例与本仓库的作图工具）
+          pip install "numpy>=1.26" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" \
+                      pytest statsmodels pymongo pyarrow matplotlib
       - name: Operator layer (M1 gate: 20/20)
         run: python -m pytest tests/test_operators.py -q
       - name: Invariants + panel contract + registry
