@@ -113,8 +113,26 @@ def to_long(panel: pd.DataFrame):
 
 
 def from_long(out, like: pd.DataFrame) -> pd.DataFrame:
-    """vnpy 输出长表 → 与 ``like`` 同 index/columns 的面板。"""
-    pdf = out.to_pandas().pivot(index="datetime", columns="vt_symbol", values="data")
+    """vnpy 输出长表 → 与 ``like`` 同 index/columns 的面板。
+
+    ⚠️ **刻意不用 ``out.to_pandas()``**：polars 的这个方法依赖 pyarrow，而 pyarrow 又要求
+    numpy ≥ 2.0；本仓库为了 golden 基线（manifest 记录的环境）把 numpy 钉在 1.26.4 ——
+    两者在同一个环境里无法共存。实测症状：CI 上 `ImportError: pyarrow requires NumPy 2.0 or newer`
+    ⇒ `to_pandas()` 抛异常 ⇒ 差分类测试全部失败（本地因为另有 fastparquet、且 numpy 环境不同而没暴露）。
+
+    这里改走 polars 原生导出（``to_dict(as_series=False)`` → pandas），全程不碰 pyarrow：
+    既不牺牲 golden 的环境一致性，也让差分测试在 CI 能真跑。
+    """
+    if hasattr(out, "to_dict"):                      # polars DataFrame
+        columns = out.select(["datetime", "vt_symbol", "data"]).to_dict(as_series=False)
+    else:                                            # 已是 pandas / dict 的兜底
+        columns = out if isinstance(out, dict) else out.to_dict("list")
+    frame = pd.DataFrame({
+        "datetime": columns["datetime"],
+        "vt_symbol": columns["vt_symbol"],
+        "data": columns["data"],
+    })
+    pdf = frame.pivot(index="datetime", columns="vt_symbol", values="data")
     pdf.columns.name = None
     pdf.index.name = None
     return pdf.reindex(index=like.index, columns=like.columns)
