@@ -20,6 +20,27 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
+
+def _has_parquet_engine() -> bool:
+    """本模块的夹具要用 parquet 写临时面板；引擎缺失时**显式跳过**而不是抛 ImportError。
+
+    实测：CI runner 上 pandas 找不到 pyarrow/fastparquet 时，报的是
+    `ImportError: Unable to find a usable engine`，看起来像测试坏了，其实是环境缺件。
+    """
+    for module in ("pyarrow", "fastparquet"):
+        try:
+            __import__(module)
+            return True
+        except ImportError:
+            continue
+    return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _has_parquet_engine(),
+    reason="需要 parquet 引擎（pyarrow 或 fastparquet）写临时面板；环境缺件时显式跳过",
+)
+
 def _tool():
     spec = importlib.util.spec_from_file_location("_us_verify", ROOT / "tools" / "us_data_verification.py")
     module = importlib.util.module_from_spec(spec)
