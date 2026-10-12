@@ -7,11 +7,11 @@
 | 项 | 状态（2026-10-09） |
 |---|---|
 | 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**682** 个测试全绿（18 个文件）；7/7 变异注入被抓住 |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**697** 个测试全绿（20 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
 | 因子层 | ✅ **101/101 已实现**；状态 **`verified` 82 / `partial` 19 / `ambiguous` 0** —— 19 个缺「门槛 3 独立差分」（vnpy 未实现：18 个含 `IndNeutralize` + `alpha56` 需 `cap`），备注逐条写明 |
 | **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
-| 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**；✅ **L3 因子级差分 82 个可比因子 0 待查**；✅ L4 不变量全量通过；⛔ golden 快照（M5）未完成 |
+| 因子层（L2–L5） | ✅ **L2 规范对照 101/101 等价**；✅ **L3 因子级差分 82 个可比因子 0 待查**；✅ L4 不变量全量通过；✅ **golden 快照已入库**（5×320 冻结基线 + sha256 + 环境版本，已接 CI）；✅ L6 辅助统计（明文不参与判定） |
 | `verified` 因子数 | **82/101**（§6.8 六条门槛全满足；其余 19 个缺「门槛 3 独立差分」⇒ 如实标 `partial`。设计文档曾预估 60~80） |
 | 许可 | **MIT**（clean-room，零 GPL 血缘；CI 有机械守卫） |
 
@@ -188,7 +188,7 @@ alpha101-verified/
 │   ├── test_factors.py         # 5 个试点因子：封闭解 / 独立第二实现 / L2 结构 / L4 不变量
 │   ├── test_differential.py    # vnpy 算子层差分包装（参照缺失自动跳过）
 │   ├── test_adapters_real_data.py  # 真实 A 股数据端到端（无数据库时跳过）
-│   └── golden/                 # golden 快照（M5 建；现为空并有说明）
+│   └── golden/                 # golden 快照（5×320 冻结基线 + sha256 + 环境版本，已接 CI）
 ├── tools/
 │   ├── conformance_report.py   # ★ 规范对照：论文公式 ↔ 实现 AST（算子/字段/字面量），生成偏差清单
 │   ├── differential.py         # ★ 算子层差分对拍（本库 vs vnpy MIT），退出码即证据
@@ -197,10 +197,12 @@ alpha101-verified/
 └── .github/workflows/ci.yml    # pandas 2.1/2.2/2.3 矩阵 + 算子闸门 + 变异步骤
 ```
 
-**与设计文档 §7.2 的结构差异（全部是里程碑顺序，不是遗漏）**：
-`src/alpha101v/factors.py`、`tests/test_edge_cases.py`、`tests/test_conformance.py`、
-`tests/golden/` 的内容、`tools/*.py` 属 **M2–M5**。本轮宁可留空并在文件里写明原因，
-也不放「看起来跑得通」的假实现——那正是本项目要反对的东西。
+**与设计文档 §7.2 的结构对照（截至 v0.1.1，已全部补齐）**：
+`src/alpha101v/factors.py`（101 个因子）、`tests/golden/`（冻结基线）、`tools/*.py`（规范对照、
+算子层与因子层差分、golden 快照、第二参照差分、发布前安全确认等）均已就位。
+§7.2 里的 `test_edge_cases.py` / `test_conformance.py` 未单独立文件，而是**并入**
+`test_operators.py`（NaN/inf/停牌/新股的边界用例）、`test_invariants.py`（脏数据三连）
+与 `test_panel.py`（面板契约）——覆盖等价，只是不按文件名一一对应。
 §7.2 中的 `test_edge_cases.py`（NaN/inf/停牌/新股）目前在 `test_operators.py:test_a26`、
 `test_invariants.py`（脏数据三连）与 `test_panel.py` 里已覆盖算子层部分。
 
@@ -212,12 +214,11 @@ alpha101-verified/
 |---|---|---|
 | **M0** | 骨架 + MIT + 面板契约 + CI | ✅ |
 | **M1** | 20 个算子 + §8 全部用例 + 变异测试 | ✅ |
-| **M2** | 5 个试点因子 + L2/L3/L4 首跑 | ✅ **完成**：`floor(d)`、`elemwise` 层、5 个试点因子（`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56`）、算子层 L3 差分、真实 A 股端到端。余项：L2 全量 AST 对照（M3）、因子级差分（M4） |
-| **M5** | golden 快照 + 状态终态 + 发布收尾 | ✅ **完成**：`tests/golden/`（5×320 冻结基线 + sha256 + 环境版本，已接 CI）、`verified` 82/101 |
-| **M4+L-B** | 因子级差分对拍 + BRAIN 官方文档定案 | ✅ **完成**：64 一致 + 18 已归因、**0 待查**；顺带实测出参照侧 `quesval2` 取反的 bug（`docs/verification.md` §1.5） |
+| **M2** | 5 个试点因子 + L2/L3/L4 首跑 | ✅ **完成**：`floor(d)`、`elemwise` 层、5 个试点因子（`alpha101`/`alpha4`/`alpha5`/`alpha41`/`alpha56`）、算子层 L3 差分、真实 A 股端到端。当时的余项（L2 全量 AST 对照、因子级差分）后续已由 M3 / M4+L-B 补齐 ✓ |
 | M3 | 101 个因子 + 规范对照 + 偏差清单 | ✅ 完成：101/101 因子、L2 对照 101/101 等价、PIT 安全复权、偏差清单由工具生成（`docs/deviations.md` §4） |
-| M4 | vnpy 差分对拍（82 个）+ 差异归因 | ⛔ |
-| M5 | golden 快照 + 文档 + 发布 | ⛔ |
+| **M4+L-B** | 因子级差分对拍 + BRAIN 官方文档定案 | ✅ **完成**：64 一致 + 18 已归因、**0 待查**；顺带实测出参照侧 `quesval2` 取反的 bug（`docs/verification.md` §1.5） |
+| **M5** | golden 快照 + 状态终态 + 发布收尾 | ✅ **完成**：`tests/golden/`（5×320 冻结基线 + sha256 + 环境版本，已接 CI）、`verified` 82/101 |
+| **v0.1.1** | 第二独立参照差分（MIT 的 `alpha101-pipeline`）+ 使用指南 + 美股真实数据验证 + 发布（GitHub） | ✅ **完成**：19 个 `partial` 全部实测、无一条逐点一致 ⇒ 状态如实保持；另交付 `docs/usage.md` 与两个可跑示例 |
 
 ⚠️ 设计文档 §7.7 的提醒照抄在此：**不要一上来做 M3**。口径（复权/单位/PIT/算子）
 一旦有问题，拿 101 个因子做一次大规模错误实验会全部返工。
@@ -231,8 +232,9 @@ alpha101-verified/
   [arXiv:1601.00991](https://arxiv.org/abs/1601.00991)。**该论文不是 WorldQuant 官方标准**，
   且 WorldQuant 未开源任何因子代码——「正确」只能定义为「与所选规范一致」。
 * 差分对拍参照：[vnpy](https://github.com/vnpy/vnpy)（MIT）的 `alpha_101.py` 与
-  `{cs,ts,ta}_function.py`。**仅用于测试期对拍**，M4 启用时将在本文件与 `docs/verification.md`
-  补上明确的署名与许可声明。
+  `{cs,ts,ta}_function.py`。**仅用于测试期对拍**（下载到 gitignored 的 `.vnpy-ref/`，不进仓库）。署名与许可声明见
+  `docs/verification.md` §1.2/§1.5 与 `tools/README.md`；另有第二参照 `alpha101-pipeline`（MIT，
+  独立 venv）用于 19 个 `partial` 因子的对拍，见 `docs/verification.md` §1.12。
 * **clean-room 声明**：本仓库从公开论文与数学定义独立实现。被分析的 GPL-3.0 仓库
   （`QAFactor_Alpha101`）**代码从未被打开或拷贝**；其 README 的中文注释表仅用于理解经济含义
   （注释与分类不构成代码表达）。`tests/test_provenance.py` 用机械扫描守住这条纪律。

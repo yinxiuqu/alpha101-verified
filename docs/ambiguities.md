@@ -104,7 +104,8 @@ M3 时必须对 101 个因子逐个给出：规范条文 → 可判定性 → �
 | **A11** decay 方向 | "averaging **recent** values and reducing the impact of **older** data" | 本库默认正确；22 个因子定案 |
 | **A20** 中缀 `^` | `power`（可丢符号）与 `signed_power`（保号）是两个算子 | 论文 `^` → `power`；alpha48 修复、alpha90 两读法同值 |
 
-⇒ `ambiguous` 标签由 **27 个清零为 0**，101 个因子一律 `partial`（`verified` 仍待 M5 golden 快照）。
+⇒ `ambiguous` 标签由 **27 个清零为 0**。**终态（M5 之后）**：`verified` 82 / `partial` 19 / `ambiguous` 0——
+19 个 `partial` 缺的是「门槛 3 独立逐点对拍」（vnpy 未实现它们），见 `docs/verification.md` §1.7。
 
 第二轮（同日）：A1（ddof→0）、A2/A3（归一化→`(名次−1)/(n−1)`）、`decay_linear` 缺失值（→官方稀疏 NaN→0）
 也已按官方算例落地 —— 它们不是「歧义」而是**本库默认值原先与官方不同**，修正后与官方语义一致。

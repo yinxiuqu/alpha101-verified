@@ -86,8 +86,8 @@ P2/P3 是因子层的前置工作；P5/P6/P7 是**论文自身的歧义**，必�
 | V6 | vnpy 的 `ts_rank` 用 `scipy.percentileofscore(w, w[-1])/100` | 与本库 `ts_rank(normalization="one_over_n")` **数学等价**（2026-10-10 起本库默认是官方 `zero_to_one`，见 V19） | 实测：按 `one_over_n` 对齐后逐点一致（含并列）；`ordinal` 是参照没有的分支 |
 | V7 | vnpy 的 `cs_rank` 用 `method="min"`；`cs_scale` 零和行给 `0`；预热期各算子不统一（多为 `min_samples=1` 填值） | 口径差异（可接受） | 均可用本库显式参数对齐或已文档化（`method=` / §3.4 / §2.3） |
 | V8 | vnpy 的算子签名是 `window: int`，**不支持非整数窗口** | 参照能力缺口 | 论文 58–99 号共 **40 个因子**用非整数窗口 ⇒ 参照无法表达；本库按论文 `floor(d)` 实现 |
-| V9 | vnpy 自述 alpha21 把 `>=1` 实现为 `>1`、alpha24 把 `<=0.05` 实现为 `<0.05` | 参照**主动标注**的边界偏差 | 因子级对拍时列为「已知差异」，**不得判为 bug**（§6.4）；留待 M4 |
-| V10 | 因子级差分入口 `calculate_by_expression` 依赖 `math_function` 与 `ta_function`（后者需 **talib**） | 工具链缺口 | M4 需补 `math_function` 并处理 talib（本机未装 ta-lib）；本轮只做算子层 |
+| V9 | vnpy 自述 alpha21 把 `>=1` 实现为 `>1`、alpha24 把 `<=0.05` 实现为 `<0.05` | 参照**主动标注**的边界偏差 | 因子级对拍时列为「已知差异」，**不得判为 bug**（§6.4）；M4 因子级差分已按此处理 |
+| V10 | 因子级差分入口 `calculate_by_expression` 依赖 `math_function` 与 `ta_function`（后者需 **talib**） | 工具链缺口 | 已在 M4+ 解决：`fetch_vnpy_reference.sh` 下载 `math_function.py` 与 `ta_function.py`，并用同目录 `talib` 替身满足导入；`ta_*` 算子仍不参与对拍 |
 
 ---
 
