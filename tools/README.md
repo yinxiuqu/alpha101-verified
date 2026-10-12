@@ -7,6 +7,10 @@
 | `differential.py` | ✅ **算子层已交付**（2026-10-09） | 双实现差分对拍：本库 vs vnpy（MIT，polars DSL）逐点 `allclose(rtol=1e-8)`，并对差异做归因分类（一致 / 口径差异 / 不一致待查），**严禁简单判错**（§6.4）。24 项：18 一致 + 6 归因 + 0 待查 |
 | `fetch_vnpy_reference.sh` | ✅ **已交付** | 下载 vnpy 的 `cs_function.py` / `ts_function.py` / `utility.py` / `datasets/alpha_101.py` 到 gitignored 的 `.vnpy-ref/`，逐文件校验 SHA256（**第三方代码不入库**） |
 | `fetch_brain_docs.py` | ✅ **已交付**（2026-10-11） | 一次性抓取 BRAIN 平台文档 → MD（+PDF）：算子 66 条（完整正文 + 官方算例）、Learn 教程 17 页、数据集 150 个、数据字段 4367 个（含描述/数据集）。落 `refs/`（gitignored）：**专有文档，不提交、不分发**；cookie 只走环境变量 |
+| `us_data_verification.py` | ✅ **已交付**（2026-10-12） | **美股真实数据验证**：`--fetch`（逐只取 + 断点续取 + 限频退避，落地 gitignored 的 `refs/us_verify/`）→ `--verify`（契约/不变量/零 ±inf/覆盖率）→ `--delete --audit`（**删干净 + 出审计** `reports/us_data_audit.md`）。含**未复权价的拆股后复权**（用 `pre_close` 反推；分红不修，如实标注）。⚠️ 实测该 tushare 账号 `us_daily` 限 **1 次/小时**、复权接口无权限 ⇒ 本轮未能完成取数 |
+| `field_requirements.py` | ✅ **已交付**（2026-10-12） | 从注册表**生成**「字段 → 因子」与「你有的字段 → 能跑几个因子」两张表，注入 `docs/usage.md`（`--check` 防文档漂移）；有测试守着 |
+| `make_lb_evidence.py` | ✅ **已交付**（2026-10-11） | 生成 `docs/lb_evidence.md`：17 条官方文档结论 ↔ 短引文 + **现算的 PDF 页码** |
+| `make_wechat_material.py` | ✅ **已交付**（2026-10-11） | 生成公众号素材（4 张图 + 写作纲要） |
 | `brain_alignment.py` | ✅ **已交付**（2026-10-11） | **BRAIN 行为对齐抽样**（补充证据，不是 L3）：同表达式在本库与平台各出一条日度 PnL，比较**单调性**（Spearman）而非数值相等。两条取数路径都**零配额**（`--alpha-id` 读已有仿真 / `--platform-pnl` 读导出文件）；`--submit` 会拒绝执行（不代你消耗配额）。凭据只从 `BRAIN_COOKIE` 或文件读，**不接受命令行 cookie** |
 | `l6_statistics.py` | ✅ **已交付**（2026-10-11） | **L6 辅助统计**（**不是门槛**）：横截面 Spearman IC（h=1/2/3/5/10）、IC 衰减形状、市值/行业暴露、因子两两 PnL 相关。⚠️ 明文：统计显著 ≠ 实现正确，不参与 `verified/partial` 判定；A 股 ≠ 美股 |
 | `golden_snapshot.py` | ✅ **已交付**（2026-10-11，M5） | **L5 golden 快照**：固定种子面板（5×320）上冻结 101 个因子输出（npz + sha256 清单 + 面板哈希 + 环境版本），`--check` 即门禁。判据 = **NaN 模式一致 + allclose 紧容差**；哈希不一致但数值一致只算「漂移提示」。⚠️ 只防回归、不证明正确性 |
@@ -32,6 +36,19 @@ BRAIN_COOKIE='t=...' python tools/fetch_brain_docs.py --only datafields
 抓 `/operators`(+`/{name}`)、`/tutorials`(+`/tutorial-pages/{id}`)、`/data-sets`、`/data-fields/summary`
 与 `/data-fields`（后者**必须带完整上下文**，否则 `Invalid query`）。
 **不抓** `/research`（那是社区帖检索，不是文档）与运营内容。
+
+### 美股数据验证（取数 / 验证 / 删除）
+
+```bash
+python tools/us_data_verification.py --fetch --tickers AAPL,MSFT --start 2018-01-01 --end 2024-12-31
+python tools/us_data_verification.py --verify
+python tools/factor_differential.py --panel-file refs/us_verify     # 因子级差分（自动跳过缺字段的因子）
+python tools/us_data_verification.py --delete --audit               # 删干净并留审计
+```
+
+⚠️ 实测该 tushare 账号：`us_daily` **1 次/小时**、`us_daily_adj`/`us_adjfactor` **无权限**、
+`us_basic.classify` 是证券类型（非行业）⇒ 详见 `docs/verification.md` §1.11。
+数据只落 gitignored 的 `refs/`，**从不入库**；删除审计在 `reports/us_data_audit.md`。
 
 ### L6 辅助统计与 BRAIN 行为对齐（补充证据层）
 

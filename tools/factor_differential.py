@@ -305,6 +305,32 @@ def _round_days(value, *, name: str, minimum: int) -> int:
     return days
 
 
+def load_panel_file(path: pathlib.Path) -> dict[str, pd.DataFrame]:
+    """从目录（``<dir>/<字段>.parquet``）或单文件（多层列）读面板。
+
+    缺失字段**不报错**：需要它的因子会在 main() 里被自动排除
+    （例如美股面板通常没有 `ind_*` 与 `cap` ⇒ 那 19 个因子自动跳过）。
+    """
+    panel: dict[str, pd.DataFrame] = {}
+    if path.is_dir():
+        for file in sorted(path.glob("*.parquet")):
+            panel[file.stem] = pd.read_parquet(file)
+        for file in sorted(path.glob("*.csv")):
+            panel.setdefault(file.stem, pd.read_csv(file, index_col=0, parse_dates=True))
+    elif path.suffix == ".parquet":
+        frame = pd.read_parquet(path)
+        if isinstance(frame.columns, pd.MultiIndex):
+            for field in frame.columns.get_level_values(0).unique():
+                panel[str(field)] = frame[field]
+        else:
+            raise ValueError("单文件面板需要多层列（字段 × 标的）；或改用 `--panel-file <目录>`")
+    else:
+        raise ValueError(f"不支持的格式：{path}（用 .parquet 目录）")
+    if not panel:
+        raise SystemExit(f"面板目录为空：{path}")
+    return {k: (v if isinstance(v, pd.DataFrame) else v.to_frame()) for k, v in panel.items()}
+
+
 def load_real_panel(n_codes: int, start: str, end: str) -> dict[str, pd.DataFrame]:
     """真实 A 股面板（本地 MongoDB，hfq 复权）——**连续行情**，用于排除离散平局带来的数值差异。"""
     import numpy as np  # noqa: PLC0415
@@ -333,6 +359,9 @@ def main() -> int:
     parser.add_argument("--alphas", help="只对拍这些因子（逗号分隔，如 13,15,16）；用于大面板下的定点核查")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument(
+        "--panel-file", help="从目录（<dir>/<字段>.parquet）或单文件读面板；用于美股等外部数据",
+    )
+    parser.add_argument(
         "--panel", default="synthetic", choices=("synthetic", "real"),
         help="synthetic=确定性合成面板（离散 rank 多平局）；real=本地真实 A 股面板"
              "（连续行情，用于排除「离散平局被浮点噪声打破」这一类数值差异）",
@@ -358,12 +387,21 @@ def main() -> int:
 
     expressions = load_expressions()
     if args.panel == "real":
-        panel = load_real_panel(args.n_codes, args.start, args.end)
+        panel = load_panel_file(pathlib.Path(args.panel_file)) if args.panel_file else load_real_panel(
+            args.n_codes, args.start, args.end
+        )
     else:
         panel = make_panel()
     mine_panel = panel if args.no_align else apply_alignments(panel)
     long = to_long(panel)
     index, columns = panel["close"].index, panel["close"].columns
+
+    # 面板（尤其是外部数据如美股）可能缺字段：缺字段的因子自动跳过，并明确打印跳过了谁
+    available = set(panel)
+    dropped = [n for n in expressions if not set(registry.REGISTRY[f"alpha{n}"].params) <= available]
+    if dropped:
+        print(f"ℹ️ 面板缺字段，跳过 {len(dropped)} 个因子：{dropped[:12]}{'…' if len(dropped) > 12 else ''}")
+    expressions = {n: e for n, e in expressions.items() if n not in dropped}
 
     if args.alpha:
         targets = [args.alpha]

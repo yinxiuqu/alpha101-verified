@@ -7,7 +7,7 @@
 | 项 | 状态（2026-10-09） |
 |---|---|
 | 里程碑 | **M0/M1 完成**（20 算子 + §8 + 变异测试）、**M2 完成**（规范入库 + `floor(d)` + `elemwise` + 5 试点 + 算子层差分 + 真实面板端到端）、**M3 完成**（**101/101 因子** + 复权 + 规范对照 101/101 等价） |
-| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**671** 个测试全绿（16 个文件）；7/7 变异注入被抓住 |
+| 算子层（L1） | ✅ **20/20 通过**，`rtol = 1e-10`；**682** 个测试全绿（18 个文件）；7/7 变异注入被抓住 |
 | 算子层差分（L3 提前） | ✅ 与 **vnpy（MIT）** 24 项对拍：**18 项逐点一致 + 6 项已归因口径差异 + 0 项待查**（`tools/differential.py`） |
 | 因子层 | ✅ **101/101 已实现**；状态 **`verified` 82 / `partial` 19 / `ambiguous` 0** —— 19 个缺「门槛 3 独立差分」（vnpy 未实现：18 个含 `IndNeutralize` + `alpha56` 需 `cap`），备注逐条写明 |
 | **真实数据端到端** | ✅ 359 交易日 × 120 只 A 股（MongoDB + 申万 as-of 行业）：面板契约通过、`vwap` 自洽 **99.86%**、零 ±inf、`ind_neutralize` 残差和 **3.4e-15**；✅ **M3 已补 PIT 安全复权**（除权日假跳空 35.11% → 7.60%） |
@@ -38,6 +38,8 @@ vnpy（MIT）仅作测试期参照并署名；运行时依赖只有 `numpy / pan
 ---
 
 ## 快速开始
+
+> **第一次用？看 [`docs/usage.md`](docs/usage.md)**（安装 → 五分钟上手 → 字段不够怎么办 → 口径 → 自查 → 性能 → 常见问题），并可直接跑 `python examples/hello_alpha101.py`（合成面板，不需要数据库）。
 
 ```bash
 PY=/home/yinxiuqu/anaconda3/envs/qa/bin/python     # Python 3.11 / pandas 2.3.3
@@ -84,7 +86,7 @@ resid  = ind_neutralize(factor, industry)      # 逐日组内去均值 = 行业�
 ## 一页复现（每条声明都能自己跑出来）
 
 ```bash
-python -m pytest -q                                  # 671 项全绿（约 23 分钟）
+python -m pytest -q                                  # 682 项全绿（约 22 分钟）
 
 python tools/conformance_report.py                   # L2：期望「等价 101（共 101 个因子）」
 python tools/conformance_report.py --table           # 101 行偏差清单（docs/deviations.md §4 由此生成）
@@ -135,6 +137,8 @@ python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必
 | 试点因子算得对（封闭解 + 独立第二实现） | `tests/test_factors.py`：alpha4/alpha5/alpha56 用 `scipy.rankdata` + 显式循环另写一份对拍；alpha101/alpha41 用论文公式裸 numpy 直算 |
 | 真实数据上契约与不变量成立 | `tests/test_adapters_real_data.py`（11 项）：面板契约、`vwap` 单位自洽、因子零 ±inf、PIT 行业中性化正交、真实数据时间截断一致性 |
 | **L6 辅助统计（不是门槛）** | `tools/l6_statistics.py` + `reports/l6_summary.md`：60 只 × 359 日 A 股上跑完 101 个因子——平均 IC（h=1/2/3/5/10）**+0.0131/+0.0110/+0.0126/+0.0131/+0.0149**，两两 PnL 相关 **0.164**（4950 对，论文断言 15.9% 属**同量级弱参考**）。⚠️ 明文：不参与 `verified/partial` 判定，一个状态都没动 |
+| **美股数据验证链路（未完成，卡额度）** | `tools/us_data_verification.py`（取数→验证→**删除+审计**）+ `tools/factor_differential.py --panel-file`。实测该 tushare 账号 `us_daily` 限 **1 次/小时**、复权接口**无权限**、且无行业字段 ⇒ 本轮如实记「未完成」；删除审计见 `reports/us_data_audit.md`（`docs/verification.md` §1.11） |
+| **给使用者的实践指南** | `docs/usage.md`（安装 → 五分钟上手 → 接自己的数据 → 字段不够怎么办 → 口径 → 自查 → 性能 → 常见问题）+ `examples/hello_alpha101.py`、`examples/from_my_csv.py`（都可直接跑） |
 | **L-B 文档语料（本地，gitignored）** | `tools/fetch_brain_docs.py` → `refs/brain_docs/`：算子完整正文 66（53 有详情页）、Learn 教程 17 页、数据集 150 个、数据字段 **4367** 个（含描述与数据集）+ 字段名总表 4545，均含 MD 与 PDF。**登录墙内的专有文档：只作本地依据，不提交、不分发** |
 | **BRAIN 行为对齐工具（补充证据）** | `tools/brain_alignment.py`：同表达式两边的日度 PnL 做**单调性**比较（Spearman），两条取数路径都**零配额**、且不接受命令行凭据；`--submit` 拒绝执行（不代耗配额）。⛔ **未完成且非工具问题**：该账号只有 **USA** 数据（`/data-sets?region=USA`=150；`CHINA`/`CHN`/`GLB`/`EUR`/`ASI` 全 0，两种拼写都试过）⇒ 拿不到 A 股平台结果、不同市场无法对齐。可用 `--check-region` 只读复验（退出码 3 = 无中国区数据；`docs/verification.md` §1.9） |
 | 真实面板冒烟可复跑 | `tools/real_panel_smoke.py`（359 交易日 × 120 只，退出码即证据） |
@@ -159,6 +163,7 @@ alpha101-verified/
 │   ├── Alpha101_修复发布决策与验证协议_v0.1.md   # 设计依据（内容版本 v0.2）
 │   ├── operators.md            # ★ 算子口径唯一权威（含歧义点决策 + 4 条文档勘误 + 论文核对回写）
 │   ├── paper_formulas.md       # ★ 论文规范入库：101/101 条公式逐字（括号平衡校验 0 不平衡）
+│   ├── usage.md              # ★ 使用指南（给第一次用的人）
 │   ├── verification.md         # 六层协议与验证结果矩阵
 │   ├── ambiguities.md          # 规范歧义清单（已决策 / 待决 / 无法判定）
 │   └── deviations.md           # 与论文/GPL 原实现的偏差清单（101 行清单 M3 生成）
