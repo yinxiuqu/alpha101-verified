@@ -188,7 +188,19 @@ def to_long(panel: dict[str, pd.DataFrame]) -> "object":
 
 
 def from_long(out, like: pd.DataFrame) -> pd.DataFrame:
-    pdf = out.to_pandas().pivot(index="datetime", columns="vt_symbol", values="data")
+    # ⚠️ 刻意**不用** polars 的 to_pandas()：它依赖 pyarrow，而 pyarrow 要求 numpy ≥ 2.0，
+    # 与本仓库为 golden 基线钉住的 numpy 1.26.4 冲突（CI 实测 ImportError）。
+    # 这里改走 polars 原生导出，全程不碰 pyarrow。
+    # 注意：tools/differential.py 里有一份等价实现（算子层用），两处必须保持一致。
+    if hasattr(out, "to_dict"):                      # polars DataFrame
+        columns = out.select(["datetime", "vt_symbol", "data"]).to_dict(as_series=False)
+    else:                                            # 已是 pandas / dict 的兜底
+        columns = out if isinstance(out, dict) else out.to_dict("list")
+    pdf = pd.DataFrame({
+        "datetime": columns["datetime"],
+        "vt_symbol": columns["vt_symbol"],
+        "data": columns["data"],
+    }).pivot(index="datetime", columns="vt_symbol", values="data")
     pdf.columns.name = None
     pdf.index.name = None
     return pdf.reindex(index=like.index, columns=like.columns)
