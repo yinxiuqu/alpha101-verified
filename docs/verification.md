@@ -397,6 +397,56 @@ Research Consultant / 特定竞赛参与者、以及在 WQB 里用 `region='CHIN
 **数据处置**：用户不持有美股数据 ⇒ 验证后已执行 `python tools/us_data_verification.py --delete --audit`，
 审计见 [`reports/us_data_audit.md`](../reports/us_data_audit.md)。数据全程只在 gitignored 的 `refs/` 下，**从未进入 git**。
 
+### 1.12 第二独立参照差分（MIT 许可）：接入完成，**19 个 partial 暂不升级**（2026-10-12）
+
+**动机**：19 个 `partial` 因子（18 个含 `IndNeutralize` + `alpha56` 需 `cap`）卡在**门槛 3「独立逐点对拍」**上——
+第一参照（vnpy）没有实现它们，所以这条门槛原理上无法满足。用户选择「补第二个独立参照」来攻这个缺口。
+
+**参照选型（先过许可这关）**：社区主流实现要么 `license=None`、要么 `NOASSERTION`（**不具备可用许可**），
+最终选定 **[alpha101-pipeline](https://pypi.org/project/alpha101-pipeline/) 0.6.2**：
+PyPI 分类器明写 **MIT** ⓐ、独立作者、DuckDB/SQL 实现、**覆盖全部 101 个公式（含全部 19 个）**、支持 `IndNeutralize` 与 `cap`。
+它装进仓库内**独立 venv**（`.refs/venv-ref`，gitignored），**不进运行时依赖**（`pyproject` 不动，
+`tests/test_provenance.py` 继续守 numpy/pandas/scipy）；**GPL 实现一律不用**（设计文档 §1.1 第 8 行）。
+
+**工具**：`tools/second_reference_differential.py`（差分 + 归因）、`tools/fetch_second_reference.sh`（取参照、记录版本与许可）。
+参照自己声明的口径必须**逐条对齐**，否则比的是口径：
+
+| 参照 | 本库默认 | 对齐 |
+|---|---|---|
+| 截面 `rank` = **0..n−1** | `[0,1]`（官方） | 切 `ordinal` 后 **减 1**（实测：不改 alpha56 全列不匹配；改后 2138 → 26） |
+| 滚动 `stddev` **ddof=1** | `ddof=0`（官方） | 切 `ddof=1` |
+| `decay_linear` 满窗 | 稀疏（官方） | 切 `dense=True` |
+| `argmax` 自窗口起点 | `days_ago`（官方） | 切 `basis="window_start"` |
+| `^` 保号 | `power`（官方丢符号） | `^`→`signedpower` |
+| `adv{N}` = `volume*close` | 真成交额 | 面板 `amount := volume*close` |
+| 小数窗口**四舍五入** | `floor`（论文 §3） | ⚠️ **见下：实测不是主因** |
+
+**已证明的机制（都有最小复现，不是猜）**
+
+1. **并列取号不同**：参照按**行序递增**取号，本库取 `average`。
+   复现：构造全并列面板（close 只有 3 个取值）⇒ 参照 `alpha56` 输出 −k² 序列（0,−1,−4,−9,…），本库 `ordinal` 出现 .5 名次；
+2. **窗口不足/退化时 0 vs NaN**：参照走 SQL ⇒ 给 **0**，本库按官方给 **NaN**。
+   复现：常价格面板上参照 `alpha56` 有有限值、本库全 NaN；真实面板上体现为 1.3~1.6 万个 NaN 差异。
+
+**已被证伪的归因（重要教训）**：曾把「公式里有 round≠floor 的小数窗口」直接判为**已归因** ✗。
+把参照的 `alpha58` 公式改成 floor 后重比：不匹配比例 **98.9% → 100%**（更差）
+⇒ **小数窗口不是主因**。工具里该判定已降级为「待查（含小数窗口候选，未证伪）」，
+并用测试钉死（`tests/test_second_reference.py::test_window_verdict_is_not_an_attribution`）。
+**教训**：归因必须做**证伪实验**（改参照再比），不能靠「公式里有这个特征」。
+
+**19 个因子的现状（真实面板 60 只 × 359 日，按 4 个一批跑）**：**没有任何一个达到逐点一致**；
+差异主要由上面两类「参照侧口径偏离」加上**尚未定论的第三类**（`indneutralize` 语义：抽到的 L2 行业组只有 1 只 ⇒ 判定退化，
+需用更粗的分组重测）共同造成。⇒ **19 个状态一律保持 `partial`**，不升级、不豁免（与设计文档 §6.4 同一条纪律）。
+结果表：`reports/second_reference_diff.csv`。
+
+**工程坑（都写进工具了）**：参照默认的自动分块/内存探测在沙箱里会**挂死**
+（`/tmp` 是受限 tmpfs，DuckDB 落盘失败又不报错）⇒ 必须显式 `chunked='never' + memory_limit='1GB' + temp_dir=<工作区>`（>400s → 1.3s）；
+公式数一多（19 个）仍会挂 ⇒ 按 4 个一批跑。
+
+**下一步（收口这 19 个的唯一正路）**：逐因子做证伪实验——把参照改成与本库同口径
+（组内去均值替代 z-score、空窗口给 NaN、并列取 average），若某因子差异随之塌缩到 0，
+该因子的差异就被**证明**为参照侧口径偏离，届时再按既有标准评估是否升级。
+
 ## 2. 六层协议状态
 
 | 层 | 判据 | 状态 | 说明 |

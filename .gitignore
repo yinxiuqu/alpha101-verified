@@ -18,3 +18,5 @@ venv/
 
 # BRAIN 官方算子文档（登录墙内的专有文档）：仅本地参考，绝不提交
 refs/
+# 参照实现（vnpy / alpha101-pipeline 等）：只在测试期用，绝不入库
+.refs/

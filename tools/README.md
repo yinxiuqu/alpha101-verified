@@ -7,6 +7,8 @@
 | `differential.py` | ✅ **算子层已交付**（2026-10-09） | 双实现差分对拍：本库 vs vnpy（MIT，polars DSL）逐点 `allclose(rtol=1e-8)`，并对差异做归因分类（一致 / 口径差异 / 不一致待查），**严禁简单判错**（§6.4）。24 项：18 一致 + 6 归因 + 0 待查 |
 | `fetch_vnpy_reference.sh` | ✅ **已交付** | 下载 vnpy 的 `cs_function.py` / `ts_function.py` / `utility.py` / `datasets/alpha_101.py` 到 gitignored 的 `.vnpy-ref/`，逐文件校验 SHA256（**第三方代码不入库**） |
 | `fetch_brain_docs.py` | ✅ **已交付**（2026-10-11） | 一次性抓取 BRAIN 平台文档 → MD（+PDF）：算子 66 条（完整正文 + 官方算例）、Learn 教程 17 页、数据集 150 个、数据字段 4367 个（含描述/数据集）。落 `refs/`（gitignored）：**专有文档，不提交、不分发**；cookie 只走环境变量 |
+| `second_reference_differential.py` | ✅ **已交付**（2026-10-12） | **第二独立参照差分**（MIT 许可的 `alpha101-pipeline` 0.6.2，独立 venv）——专攻 19 个 `partial` 因子（第一参照 vnpy 未实现它们）。含逐条口径对齐（`rank` 0-based、`ddof=1`、`decay` dense、`argmax` 窗口起点、`^`→`signedpower`、`adv`=`volume*close`）与两个**已证明**的机制（并列取号、窗口不足 0-vs-NaN）；小数窗口归因**已被证伪**、故只标「未证伪候选」。⚠️ 参照需显式 duckdb 配置（`chunked='never'`+`memory_limit`+工作区 `temp_dir`），且**按 4 个公式一批**跑 |
+| `fetch_second_reference.sh` | ✅ **已交付**（2026-10-12） | 把 MIT 参照装进仓库内独立 venv（`.refs/venv-ref`，gitignored）：不污染运行时依赖，并打印版本与许可分类器作为合规留痕 |
 | `us_data_verification.py` | ✅ **已交付并用真实数据跑通**（2026-10-12） | **美股真实数据验证**：`--fetch --source sina`（一次请求全历史 + 含成交额⇒真 VWAP；断点续取 + 限流重试）→ `--verify`（契约/零 ±inf/覆盖率/时间截断一致性）→ `--delete --audit`（**删干净 + 出审计**）。含拆股后复权（双条件识别：整数比 + 成交量物理判据；**分红不修**如实标注）。真实结果见 `reports/us_verification_report.md`（82 个因子 vs vnpy：64 一致 + 18 已归因 + 0 待查） |
 | `field_requirements.py` | ✅ **已交付**（2026-10-12） | 从注册表**生成**「字段 → 因子」与「你有的字段 → 能跑几个因子」两张表，注入 `docs/usage.md`（`--check` 防文档漂移）；有测试守着 |
 | `make_lb_evidence.py` | ✅ **已交付**（2026-10-11） | 生成 `docs/lb_evidence.md`：17 条官方文档结论 ↔ 短引文 + **现算的 PDF 页码** |
