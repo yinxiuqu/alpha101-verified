@@ -3,11 +3,11 @@
 # Per-article metadata & publish_completed go in each article.yaml; field docs: skills/aws-wechat-article-main/references/articlescreening-schema.md
 
 # ── Account & positioning ──
-article_category:        # Account niche / positioning (e.g. tech / education / lifestyle); affects overall style & topic selection
-target_reader: ""            # Target reader persona (e.g. college students / beginners / dev managers); determines vocabulary depth & examples
+article_category: "技术/开源"        # 用户确认（round 2）
+target_reader: "量化/数据方向的开发者"
 tone:                    # Tone (casual / professional / formal / sharp / humorous); affects voice & sentence style
 update_frequency:        # Publishing frequency (e.g. daily / weekly / biweekly); used for scheduling hints
-default_author: ""           # Default author name; falls back to this when a single article has no author set
+default_author: "CowBoy"
 
 # ── Topics & titles ──
 topic_direction: "不写XX"          # Topic direction or exclusions (e.g. "avoid XX" / "more case studies"); guides topic generation boundaries
