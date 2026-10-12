@@ -27,7 +27,10 @@ jobs:
           # ⚠️ numpy 必须钉住：golden 基线与 manifest 里记录的环境是 numpy 1.26.4；
           # 不钉的话 runner 会装 numpy 2.x，浮点级差异会让「面板与基线不一致」而误报漂移
           # （golden 是**防漂移守卫**，只在生成环境里才有意义 —— 见 docs/verification.md §1.7）。
-          pip install "numpy==1.26.4" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" \
+          # scipy 同样钉住：golden manifest 记录的是 scipy 1.17.1，
+          # 只有环境完全一致的那一格（pandas 2.3.3）才能真正跑 golden 精确比对，
+          # 其余格会由 tests/test_golden.py 按 manifest 自动**显式跳过**并说明原因。
+          pip install "numpy==1.26.4" "pandas==${{ matrix.pandas-version }}" "scipy==1.17.1" \
                       pytest statsmodels pymongo pyarrow matplotlib
       - name: Fetch differential reference
         run: bash tools/fetch_vnpy_reference.sh
