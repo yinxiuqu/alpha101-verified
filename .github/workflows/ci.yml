@@ -10,8 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      fail-fast: false
       matrix:
         python-version: ["3.11"]
+        # 文档（README / docs/verification.md）声称覆盖 pandas 2.1/2.2/2.3 —— 这里必须真的展开，
+        # 否则下面 `matrix.pandas-version` 是未定义变量，工作流会在**创建 job 之前**就失败
+        # （症状：runs API 能查到 run，但 jobs 列表为空、没有日志）。
+        pandas-version: ["2.1.4", "2.2.3", "2.3.3"]
         # Dependency-drift guard (doc §9 R8): operators must behave identically
         # across the pandas versions we claim to support.
         pandas-version: ["2.1.*", "2.2.*", "2.3.*"]
