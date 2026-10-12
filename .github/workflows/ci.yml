@@ -24,7 +24,10 @@ jobs:
           # 运行时依赖只有 numpy/pandas/scipy；其余四个是测试期需要：
           # pymongo（真实数据适配器，无数据库时自动 skip）、pyarrow（parquet 快照/报告）、
           # matplotlib（使用指南示例与作图工具）、statsmodels（中性化对拍）
-          pip install "numpy>=1.26" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" \
+          # ⚠️ numpy 必须钉住：golden 基线与 manifest 里记录的环境是 numpy 1.26.4；
+          # 不钉的话 runner 会装 numpy 2.x，浮点级差异会让「面板与基线不一致」而误报漂移
+          # （golden 是**防漂移守卫**，只在生成环境里才有意义 —— 见 docs/verification.md §1.7）。
+          pip install "numpy==1.26.4" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" \
                       pytest statsmodels pymongo pyarrow matplotlib
       - name: Fetch differential reference
         run: bash tools/fetch_vnpy_reference.sh
