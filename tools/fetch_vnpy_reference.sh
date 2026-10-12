@@ -24,6 +24,10 @@ ts_function.py 88443ae16d4065406cdc7b6e034d72eceb1d06736ab97508d3c82a50d43ad18f
 utility.py 49369cf93bd9eec0cb7f8f64df73a68d0161c5a7a569d6dda16b31ddab3be3e5
 datasets/alpha_101.py cfca4ab7d5450b71a1c5af3639675948f0a6393a5ff6903dcee46480b942999d
 math_function.py 1e2729a54fe2a0178532c9d3fcf1236856d7c4278aaa96df730316a3a91013e1
+# ta_function.py 也是**因子级**差分（calculate_by_expression）所需：它 import talib，
+# 而本脚本已在同一目录生成 talib 替身，所以能正常导入；缺它会让因子级差分整体报
+# 「ModuleNotFoundError」并被记成待查项（CI 实测）。
+ta_function.py 1987665e2f0e25439611aff469743212a13103ac36b854d327361c3f149c6cea
 "
 
 echo "$FILES" | while read -r rel expected; do
@@ -64,8 +68,10 @@ echo "ok talib.py（替身，非上游文件）"
 cat <<'NOTE'
 
 参照已就绪（未入库，见 .gitignore）。
-注意：vnpy 的 ta_function.py 依赖 talib（本机未装），因此差分只覆盖
-cs_function / ts_function；ta_* 算子不属于论文 101 因子的算子集合，不影响结论。
+注意：vnpy 的 ta_function.py 依赖 talib，本脚本用同目录的 talib 替身满足导入；
+但 ta_* 算子本身不参与对拍（不属于论文 101 因子的算子集合），对拍只覆盖
+cs_function / ts_function / math_function。该文件仍须下载——因子级差分
+（calculate_by_expression）会整体 import 它，缺了会报 ModuleNotFoundError。
 另：math_function.py（less/greater/log/abs/sign/pow1/pow2/quesval…）为 M4 因子级差分
 （走 calculate_by_expression）所需，本轮算子层差分用不到。
 NOTE
