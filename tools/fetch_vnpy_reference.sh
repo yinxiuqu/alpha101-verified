@@ -18,15 +18,17 @@ mkdir -p "$DEST/vnpy/alpha/dataset/datasets"
 : > "$DEST/vnpy/alpha/dataset/datasets/__init__.py"
 
 # 逐行：相对路径 期望 SHA256（2026-10-09 抓取时记录）
+# ta_function.py 也是**因子级**差分（calculate_by_expression）所需：它 import talib，
+# 而本脚本已在同一目录生成 talib 替身，所以能正常导入；缺它会让因子级差分整体报
+# 「ModuleNotFoundError」并被记成待查项（CI 实测）。
+# ⚠️ 注意：下面 FILES 块里**只能放 `<相对路径> <sha256>` 两种字段**——它是逐行 read 解析的，
+# 塞注释会被当成文件名去下载（本条注释就是这么把自己坑过一次的）。
 FILES="
 cs_function.py 7cb7781ef5eac2e11c7abc632b139a13d5807c24b8093ad0e8f5fca22496a112
 ts_function.py 88443ae16d4065406cdc7b6e034d72eceb1d06736ab97508d3c82a50d43ad18f
 utility.py 49369cf93bd9eec0cb7f8f64df73a68d0161c5a7a569d6dda16b31ddab3be3e5
 datasets/alpha_101.py cfca4ab7d5450b71a1c5af3639675948f0a6393a5ff6903dcee46480b942999d
 math_function.py 1e2729a54fe2a0178532c9d3fcf1236856d7c4278aaa96df730316a3a91013e1
-# ta_function.py 也是**因子级**差分（calculate_by_expression）所需：它 import talib，
-# 而本脚本已在同一目录生成 talib 替身，所以能正常导入；缺它会让因子级差分整体报
-# 「ModuleNotFoundError」并被记成待查项（CI 实测）。
 ta_function.py 1987665e2f0e25439611aff469743212a13103ac36b854d327361c3f149c6cea
 "
 
