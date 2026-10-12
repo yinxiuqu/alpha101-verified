@@ -4,19 +4,13 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      fail-fast: false
       matrix:
         python-version: ["3.11"]
-        # 文档（README / docs/verification.md）声称覆盖 pandas 2.1/2.2/2.3 —— 这里必须真的展开，
-        # 否则下面 `matrix.pandas-version` 是未定义变量，工作流会在**创建 job 之前**就失败
-        # （症状：runs API 能查到 run，但 jobs 列表为空、没有日志）。
-        pandas-version: ["2.1.4", "2.2.3", "2.3.3"]
         # Dependency-drift guard (doc §9 R8): operators must behave identically
         # across the pandas versions we claim to support.
         pandas-version: ["2.1.*", "2.2.*", "2.3.*"]
@@ -33,14 +27,14 @@ jobs:
           # matplotlib（使用指南示例与本仓库的作图工具）
           pip install "numpy>=1.26" "pandas==${{ matrix.pandas-version }}" "scipy>=1.11" \
                       pytest statsmodels pymongo pyarrow matplotlib
-      - name: Operator layer (M1 gate: 20/20)
+Operator layer (M1 gate: 20/20)
+      - name: "Operator layer (M1 gate: 20/20)"
         run: python -m pytest tests/test_operators.py -q
       - name: Invariants + panel contract + registry
         run: python -m pytest tests/test_invariants.py tests/test_panel.py tests/test_registry.py -q
       - name: Mutation suite (each injected bug must be caught)
         run: python -m pytest tests/test_mutation.py -q
       - name: L5 golden snapshot (drift guard, doc §6.6)
-        run: |
           python tools/golden_snapshot.py --check
           python -m pytest tests/test_golden.py -q
       - name: L2 conformance vs paper formulas (doc §6.2)
