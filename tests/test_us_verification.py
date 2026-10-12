@@ -99,3 +99,81 @@ def test_split_adjustment_is_documented_as_not_fixing_dividends(tool):
     """分红不修：这是**已知且写明**的口径（`pre_close` 里含分红时会被当成比值吸收，但工具文档须说明）。"""
     source = (ROOT / "tools" / "us_data_verification.py").read_text(encoding="utf-8")
     assert "修不掉分红" in source or "不修分红" in source
+
+
+# ---------------------------------------------------------------------------
+# 新浪数据源（本轮实际使用的源）
+# ---------------------------------------------------------------------------
+
+
+def test_parse_sina_payload_handles_jsonp_and_types(tool):
+    """新浪返回是 JSONP（`var _A([...]);`），且所有字段是**字符串** ⇒ 必须转数值。"""
+    payload = ('/*<script>location.href=\'//sina.com\';</script>*/\n'
+               'var _A([{"d":"2026-10-09","o":"331.69","h":"338.61","l":"330.70",'
+               '"c":"336.64","v":"37881136","a":"12679500000"}]);')
+    frame = tool.parse_sina_payload(payload)
+    assert list(frame.columns) == ["date", "open", "high", "low", "close", "volume", "amount"]
+    assert frame["close"].dtype.kind == "f" and frame["date"].dtype.kind == "M"
+    assert frame["close"].iloc[0] == 336.64
+
+
+def test_vwap_from_sina_amount_is_a_real_vwap(tool):
+    """新浪有成交额 ⇒ `a/v` 应落在当日 [low, high] 内（真 VWAP），而不是近似值。"""
+    rows = [
+        {"d": "2026-10-08", "o": "336.81", "h": "341.57", "l": "335.90", "c": "340.42",
+         "v": "35332449", "a": "11993700000"},
+        {"d": "2026-10-09", "o": "331.69", "h": "338.61", "l": "330.70", "c": "336.64",
+         "v": "37881136", "a": "12679500000"},
+    ]
+    import json
+    frame = tool.parse_sina_payload("var _A(" + json.dumps(rows) + ");")
+    vwap = frame["amount"] / frame["volume"]
+    assert ((vwap >= frame["low"]) & (vwap <= frame["high"])).all()
+
+
+def test_split_detection_catches_twenty_to_one(tool):
+    """★ 实测漏检教训：GOOGL/AMZN 是 **20:1** 拆股，比例表只到 10:1 会漏 ⇒ 必须覆盖 20:1。"""
+    rows = [
+        {"d": "2022-07-13", "o": "2234.02", "h": "2283.92", "l": "2224.03", "c": "2227.07",
+         "v": "2186101", "a": "4899200000"},
+        {"d": "2022-07-15", "o": "2240.01", "h": "2262.81", "l": "2218.00", "c": "2235.55",
+         "v": "2338456", "a": "5228400000"},
+        {"d": "2022-07-18", "o": "112.64", "h": "113.68", "l": "108.37", "c": "109.03",
+         "v": "43164588", "a": "4785940000"},
+        {"d": "2022-07-19", "o": "110.85", "h": "114.02", "l": "109.56", "c": "113.81",
+         "v": "36530945", "a": "4107210000"},
+    ]
+    import json
+    frame = tool.parse_sina_payload("var _A(" + json.dumps(rows) + ");")
+    factor = tool.detect_splits(frame)
+    assert factor.iloc[0] == 1.0 and factor.iloc[-1] > 15.0, list(factor)
+    adjusted = frame["close"] * factor
+    assert (adjusted.pct_change().dropna().abs() < 0.05).all(), list(adjusted)
+
+
+def test_split_detection_tolerates_imperfect_volume_jump(tool):
+    """★ 实测漏检教训：LRCX 10:1 拆股当日成交量只增 4.7 倍（不是 10 倍）⇒ 判据不能太严。"""
+    rows = [
+        {"d": "2024-10-02", "o": "804.00", "h": "830.37", "l": "799.97", "c": "814.09",
+         "v": "1431939", "a": "1170850000"},
+        {"d": "2024-10-03", "o": "79.93", "h": "82.12", "l": "79.88", "c": "81.11",
+         "v": "6725675", "a": "545086000"},
+    ]
+    import json
+    frame = tool.parse_sina_payload("var _A(" + json.dumps(rows) + ");")
+    factor = tool.detect_splits(frame)
+    assert factor.iloc[-1] == pytest.approx(10.0, rel=0.01), list(factor)
+
+
+def test_split_detection_ignores_ordinary_moves_and_crashes(tool):
+    """普通涨跌与「暴跌但成交量不配合」的跳变都不该被当成拆股。"""
+    rows = [
+        {"d": "2024-01-02", "o": "100", "h": "101", "l": "99", "c": "100", "v": "1000000", "a": "100000000"},
+        {"d": "2024-01-03", "o": "105", "h": "106", "l": "104", "c": "105", "v": "1200000", "a": "120000000"},
+        {"d": "2024-01-04", "o": "86", "h": "88", "l": "85", "c": "86", "v": "1400000", "a": "120000000"},
+        {"d": "2024-01-05", "o": "40", "h": "42", "l": "39", "c": "41", "v": "1500000", "a": "60000000"},
+    ]
+    import json
+    frame = tool.parse_sina_payload("var _A(" + json.dumps(rows) + ");")
+    factor = tool.detect_splits(frame)
+    assert list(factor) == [1.0, 1.0, 1.0, 1.0], "腰斩但成交量没跳 ⇒ 不当拆股（宁可留下异常也不误改）"

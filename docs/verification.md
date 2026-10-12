@@ -347,49 +347,55 @@ Research Consultant / 特定竞赛参与者、以及在 WQB 里用 `region='CHIN
 | `data_fields.md` + `data_fields_summary.md` | 数据字段目录 **4367 个**（含描述与所属数据集，上下文 EQUITY/USA/TOP3000/delay=1）+ 字段名总表 4545 个 |
 | `raw/*.json`（73+） | 原始 API 响应，可复核、可再加工 |
 
-### 1.11 美股真实数据验证（tushare）：**未完成，卡在账户额度**（2026-10-12）
+### 1.11 美股真实数据验证（tushare 受阻 → 改用新浪，**已完成**，2026-10-12）
 
-**目标**：用真实**美股**行情再跑一遍算子/因子验证（A 股已做过），数据源按用户指定用 tushare
-（行情 doc_id=251、复权 doc_id=402/338）。
+**目标**：用真实**美股**行情再跑一遍算子/因子验证（A 股已做过），以回答「算子和因子在另一个市场上是否依然成立」。
+完整报告见 [`reports/us_verification_report.md`](../reports/us_verification_report.md)。
 
-**实测结论（三条硬约束，均有原始报错为证）**：
+**第一步：tushare（用户最初指定）不可行 —— 三条硬约束（都有原始报错）**
 
 | 探测 | 结果 |
 |---|---|
-| `us_basic` | ✅ 可用：**6000 只**；但 `classify` 只有 `EQ/ADR/PF/GDR`（**证券类型，不是行业**）⇒ 美股侧**无法**提供 `ind_*`，18 个 `IndNeutralize` 因子只能由 A 股数据覆盖 |
-| `us_daily` | ⚠️ 可用但**限频**：先 `频率超限(1次/分钟)`，连续试探后升级为 **`频率超限(1次/小时)`**；单次上限 6000 行、支持 `limit/offset` 分页（用户确认） |
-| `us_daily_adj` / `us_adjfactor` | ❌ **无接口权限**：`抱歉，您没有接口(us_daily_adj)访问权限` ⇒ 只能拿**未复权**价 |
+| `us_basic` | ✅ 6000 只；但 `classify` 只有 `EQ/ADR/PF/GDR`（**证券类型，不是行业**） |
+| `us_daily` | ⚠️ 先 `频率超限(1次/分钟)`，连续试探后升级为 **`频率超限(1次/小时)`** |
+| `us_daily_adj` / `us_adjfactor` | ❌ `抱歉，您没有接口(...)访问权限` ⇒ 只有未复权价 |
 
-**因此本轮没有产出美股验证结果**（1 次/小时 ⇒ 一个够用的面板要数小时到数天），
-**也没有假装做过**。已交付的是**一条命令就能跑完的完整链路**：
+**第二步：经用户同意改用免费源 —— 实测对比后选新浪**
 
-```bash
-python tools/us_data_verification.py --fetch --tickers AAPL,MSFT,... --start 2018-01-01 --end 2024-12-31
-python tools/us_data_verification.py --verify          # 契约/不变量/零 ±inf/覆盖率
-python tools/factor_differential.py --panel-file refs/us_verify   # 与 vnpy 的因子级差分（新增能力）
-python tools/us_data_verification.py --delete --audit  # 删干净 + 出审计
-```
+| 源 | 实测 |
+|---|---|
+| Yahoo chart API | ❌ HTTP 403（被挡） |
+| Stooq CSV | ❌ 返回 JS 验证挑战页 |
+| 腾讯 fqkline | ✅ 可用，但 **`qfq`/`hfq` 对美股无效**（三种口径返回同一份未复权价） |
+| **新浪 US_MinKService** | ✅ **首选**：一次请求拿**全历史**（AAPL 10050 行，1984 至今），字段含**成交额** ⇒ `vwap = 成交额/成交量` 是**真 VWAP** |
 
-**两个工程细节（都已落进代码与测试）**：
+**第三步：真实结果（80 只 × 753 个交易日，2022-01-03 ~ 2024-12-31）**
 
-1. **未复权价的拆股陷阱**：tushare 美股是**未复权**价，4:1 拆股当天会冒出 ≈−75% 的假暴跌，
-   足以毁掉所有含 `delta/returns/stddev/decay_linear` 的因子。工具用 `pre_close` 反推拆股因子做**后复权**；
-   ⚠️ 测试当场抓到我**把方向写反**（用 `cumprod(r)` 乘上去反而放大跌幅），已修正为 `cumprod(1/r)`
-   并留回归测试（`tests/test_us_verification.py::test_split_adjustment_removes_the_fake_crash`）。
-   分红是否被 `pre_close` 吸收**未经验证**，工具如实标注「不修分红」。
-2. `tools/factor_differential.py` 新增 `--panel-file`：可从任意面板目录跑因子级差分，
-   并**自动跳过字段不全的因子**（美股面板缺 `cap`/`ind_*` ⇒ 自动跳过那 19 个）——
-   这条能力对「把自己的数据接进来对拍」同样有用。
+| 检查 | 结果 |
+|---|---|
+| 面板契约 | ✅ 通过 |
+| `vwap ∈ [low, high]` | **99.49%** |
+| 因子可跑数 | **82/101**（缺 `cap`/`ind_*` 的 19 个自动跳过） |
+| ±inf | **0 个** |
+| 平均覆盖率 | **89.5%** |
+| 时间截断一致性（抽样 12 个因子） | ✅ **全部通过** |
+| **因子级差分 vs vnpy（82 个可比因子）** | ✅ **64 逐点一致 + 18 已归因 + 0 待查**（归因构成与合成面板/A 股**完全一致**） |
 
-**要真正收口**：① 提升 tushare 账户额度（`doc_id=108` 说明等级；复权接口还需单独权限），
-或 ② 用户同意改用其它免费美股源（Stooq/Yahoo 之类）。
+**两个被真实数据抓出来的 bug（都已修 + 留回归测试）**
 
-**删除与审计（用户要求「验证完毕后删掉全部美股数据」）**：已执行并留痕 ——
-`python tools/us_data_verification.py --delete --audit` 生成了 `reports/us_data_audit.md`：
-**本次删除 0 个文件**（本轮未成功落地任何美股数据）、数据目录 `refs/us_verify` 已不存在、
-仓库内无 `us_verify/us_daily/us_basic/us_adj` 残留、MongoDB 未写入任何美股集合、
-token 只在调用时从 `TUSHARE_TOKEN`/`~/tk.csv` 读取（未复制、未入库、未打印）。
-数据只落在 gitignored 的 `refs/`，**从未进入 git**。
+1. **拆股漏检**：比例表只列到 10:1 ⇒ 漏掉 **20:1**（GOOGL 2022-07-18、AMZN 2022-06-06）；
+   成交量判据要求「精确 1/r 倍」⇒ 漏掉 **LRCX 10:1**（当日成交量只增 4.7 倍）。
+   修法：比例表补到 20:1；成交量改为**物理判据**（正拆要求成交量 ≥2 倍，反拆 ≤0.5 倍）。
+   修正后 `|单日收益| > 35%` 的格子从 **3 → 0**（那 3 个全是漏检的拆股假暴跌）。
+2. **列名兼容**：`build_panel` 原先按 tushare 列名写死（`trade_date`/`ts_code`/`vol`）⇒ 新浪路径（`date`/文件名/`volume`）全线报错。
+   已做成兼容两套列名，并有测试守着。
+
+**未覆盖项（不假装完成）**：18 个 `IndNeutralize` 因子（免费源无行业字段，留待 A 股数据覆盖）、
+`alpha56`（需 `cap`）、**分红未复权**（拆股已修；对因子级差分无影响，因为两侧吃同一份面板）、
+样本 80 只而非计划的 162 只（**限流**所致：0.3 s 间隔会被新浪挡掉一半，已改为 1.2 s + 重试 + 断点续取）。
+
+**数据处置**：用户不持有美股数据 ⇒ 验证后已执行 `python tools/us_data_verification.py --delete --audit`，
+审计见 [`reports/us_data_audit.md`](../reports/us_data_audit.md)。数据全程只在 gitignored 的 `refs/` 下，**从未进入 git**。
 
 ## 2. 六层协议状态
 
