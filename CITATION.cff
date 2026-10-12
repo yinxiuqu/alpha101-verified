@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "alpha101-verified: 101 Formulaic Alphas，逐因子标注验证程度"
+abstract: >-
+  101 个公式化 Alpha 的可验证实现：算子层与权威实现对拍、规范对照、双实现逐点差分、
+  不变量与变异测试、golden 快照。82/101 通过全部门槛，19/101 因缺独立参照如实标注 partial。
+authors:
+  - alias: yinxiuqu
+    name: yinxiuqu
+version: 0.1.1
+license: MIT
+repository-code: "https://github.com/yinxiuqu/alpha101-verified"
+references:
+  - type: article
+    title: "101 Formulaic Alphas"
+    authors:
+      - family-names: Kakushadze
+        given-names: Zura
+    year: 2016
+    journal: "arXiv:1601.00991"
+    doi: "10.48550/arXiv.1601.00991"

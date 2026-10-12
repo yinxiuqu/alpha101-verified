@@ -32,6 +32,10 @@ mongo = ["pymongo>=4"]
 
 [project.urls]
 Paper = "https://arxiv.org/abs/1601.00991"
+Homepage = "https://github.com/yinxiuqu/alpha101-verified"
+Repository = "https://github.com/yinxiuqu/alpha101-verified"
+Issues = "https://github.com/yinxiuqu/alpha101-verified/issues"
+Changelog = "https://github.com/yinxiuqu/alpha101-verified/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
