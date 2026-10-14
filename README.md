@@ -139,6 +139,7 @@ python -m pytest tests/test_mutation.py -q           # 8 个已知 bug 注入必
 | **L6 辅助统计（不是门槛）** | `tools/l6_statistics.py` + `reports/l6_summary.md`：60 只 × 359 日 A 股上跑完 101 个因子——平均 IC（h=1/2/3/5/10）**+0.0131/+0.0110/+0.0126/+0.0131/+0.0149**，两两 PnL 相关 **0.164**（4950 对，论文断言 15.9% 属**同量级弱参考**）。⚠️ 明文：不参与 `verified/partial` 判定，一个状态都没动 |
 | **美股真实数据验证（已完成）** | 新浪源 80 只 × 753 日：面板契约 ✅、`vwap∈[low,high]` 99.49%、**±inf 0 个**、覆盖率 89.5%、时间截断一致性 ✅，**82 个因子对拍 vnpy：64 一致 + 18 已归因 + 0 待查**（与合成面板/A 股结论一致）⇒ `reports/us_verification_report.md`；数据已按用户要求删除并留审计。另：`tools/us_data_verification.py` |
 | ~~美股验证的原始阻塞（历史记录）~~ | `tools/us_data_verification.py`（取数→验证→**删除+审计**）+ `tools/factor_differential.py --panel-file`。实测该 tushare 账号 `us_daily` 限 **1 次/小时**、复权接口**无权限**、且无行业字段 ⇒ 本轮如实记「未完成」；删除审计见 `reports/us_data_audit.md`（`docs/verification.md` §1.11） |
+| **A 股 T+1 审计** | `docs/t1_audit.md`：逐项核对「因子层是否含美股 T+0 假设」——结论是**不含**（无执行层、无前视、评估只用 h≥1 前瞻收益），并列出使用者必须自行处理的三件事（信号后移一天、涨跌停/停牌、T+1 持仓约束） |
 | **给使用者的实践指南** | `docs/usage.md`（安装 → 五分钟上手 → 接自己的数据 → 字段不够怎么办 → 口径 → 自查 → 性能 → 常见问题）+ `examples/hello_alpha101.py`、`examples/from_my_csv.py`（都可直接跑） |
 | **L-B 文档语料（本地，gitignored）** | `tools/fetch_brain_docs.py` → `refs/brain_docs/`：算子完整正文 66（53 有详情页）、Learn 教程 17 页、数据集 150 个、数据字段 **4367** 个（含描述与数据集）+ 字段名总表 4545，均含 MD 与 PDF。**登录墙内的专有文档：只作本地依据，不提交、不分发** |
 | **第二独立参照差分（MIT）** | `tools/second_reference_differential.py`：对拍 19 个 `partial` 因子（第一参照 vnpy 未实现它们）。已证明两处参照侧口径偏离（并列取号、窗口不足 0-vs-NaN），一条归因被**证伪**（小数窗口）⇒ **19 个状态不升级**。结果表 `reports/second_reference_diff.csv`（`verification.md` §1.12） |
