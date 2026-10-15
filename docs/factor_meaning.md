@@ -473,9 +473,120 @@
 
 ---
 
+---
+
+### alpha61
+`rank((vwap - ts_min(vwap, 16.1219))) < rank(correlation(vwap, adv180, 17.9282))`
+* **机械**：布尔比较（均价距 16 日低点的幅度秩 vs 均价与 180 日均额的相关秩）⇒ 输出 0/1。
+* **推断**：在「**跌得深**」与「**价-额同步强**」之间做二选一的方向判断。属二元信号。
+
+### alpha62
+`(rank(correlation(vwap, sum(adv20, 22.4101), 9.91009)) < rank((rank(open)+rank(open)) < (rank(mid)+rank(high)))) * -1`
+* **机械**：两个布尔嵌套（相关秩 vs 「开盘秩之和 < 中价秩+高点秩之和」）再取负。
+* **推断**：**量额同步偏弱 + 开盘相对偏低** 的组合 ⇒ 反向表述。
+
+### alpha63（`partial`）
+`rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation((vwap*0.318108 + open*0.681892), adv180, …), …))`
+* **机械**：行业中性化收盘的 2.25 日变化（衰减加权）秩 —— 减去 —— 混成价格与长均额相关的衰减秩。
+* **推断**：**个股价格变化 vs 量额同步** 的差值。`partial` 只因门槛 3（缺独立参照），与含义无关。
+
+### alpha64
+`rank(correlation(sum(((open*0.178404) + (low*0.821596)), 12.7054), sum(adv120, 12.7054), 16.6208)) < rank(delta((mid*0.178404 + …), 1.06157))`
+* **机械**：混成价格(开盘/最低 加权)与长均额相关的秩 vs 混成中价变化的秩，布尔比较。
+* **推断**：**价格-成交额同步 vs 价格自身变化** 的二元方向判断。
+
+### alpha65
+`(rank(correlation(((open*0.00817205) + (vwap*0.99182795)), sum(adv60, 8.6911), 6.40374)) < rank((open - ts_min(open, 13.635)))) * -1`
+* **机械**：权重 0.008/0.992 ⇒ 混成价格**几乎就是 vwap**；与成交额相关后，和「开盘距 13 日低点」比较，取负。
+* **推断**：**资金流同步偏弱 + 开盘未接近低位** ⇒ 反向。📌 这也是论文「加权写法接近冗余」的一例（权重极端到 1% 量级）。
+
+### alpha66
+`rank(decay_linear(delta(vwap, 3.51013), 7.23052)) + Ts_Rank(decay_linear((((low*0.96633) + (low*0.03367)) - vwap) / (open - mid), …))`
+* **机械**：两段相加 —— 均价变化的衰减秩，加一个比值型（`low` 的加权和**恒等于 low** ⇒ 分子是 low − vwap）的衰减时序秩。
+* **推断**：**均价动量 + 日内结构**（最低价与成交均价的距离 ÷ 开盘与中价的距离）。
+
+### alpha67（`partial`）
+`(rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1`
+* **机械**：**幂运算**：底＝高点距 2 日低点的秩，指数＝两个不同层级行业中性化后（sector 的 vwap 与 subindustry 的 adv20）的相关秩；取负。
+* **推断**：用幂做**非线性交互**——相当于「按另一维的强弱来缩放这一维」。
+  📌 底是非负秩 ⇒ 本库的 `power`（非整数指数丢符号）与保号版在此**无差异**（这是我按官方文档定案 `^` 语义后仍成立的边界情形）。
+
+### alpha68
+`(Ts_Rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333) < rank(delta(((close*0.518371) + (low*0.481629)), 1.06157))) * -1`
+* **机械**：高点秩与成交额秩的相关再做时序秩，与混成价格变化比较，取负。
+* **推断**：**高位放量的持续性 vs 价格变化**。
+
+### alpha69（`partial`）
+`(rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation((close*0.490655 + vwap*0.509345), adv20, …), …))`
+* **机械**：行业中性化均价变化的 4.79 日极值秩 作为底，混成价格与 adv20 的相关时序秩 作为指数。
+* **推断**：幂型非线性交互（同 67/70/78/80 一族）。
+
+### alpha70（`partial`）
+`(rank(delta(vwap, 1.29456))^Ts_Rank(correlation(IndNeutralize(close, IndClass.industry), adv50, 17.8256), 17.9171)) * -1`
+* **机械**：均价变化秩 幂 行业中性化收盘与 adv50 的相关时序秩，取负。
+* **推断**：同上族；用**收盘**而非 vwap 做中性化，强调个股自身的资金流。
+
+### alpha71
+`max(Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501), 15.6948), Ts_Rank(decay_linear((rank(…)), …), …))`
+* **机械**：两段多层嵌套（时序秩→衰减→相关→时序秩）取 **max**。
+* **推断**：**取两条信号里更强的那条**（max 语义），与 alpha77 的 min 型互补。
+
+### alpha72
+`rank(decay_linear(correlation(mid, adv40, 8.93345), 10.1519)) / rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5189), …), …))`
+* **机械**：两个「衰减加权相关」的秩**相除**。
+* **推断**：**价-额同步 ÷ 量-价同步**，看两者相对强弱。
+  ⚠️ 分母秩可为 0 ⇒ 该因子部分交易日输出 NaN（除零语义，不掩盖）。
+
+### alpha73
+`max(rank(decay_linear(delta(vwap, 4.72775), 2.91864)), Ts_Rank(decay_linear(((delta(((open*0.147155) + (low*0.852845)), 2.03608) / (open*0.14…)), …), …))`
+* **机械**：max 型两段 —— 均价变化的衰减秩，与一个比值型（混成价格的加速度 ÷ 混成价格水平）的时序秩。
+* **推断**：**动量 + 日内结构**，取更强的一条。
+
+### alpha74
+`(rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank((high*0.0261661 + vwap*0.9738339)), rank(volume), 11.4791)))`
+* **机械**：两个相关秩的布尔比较（收盘-额 vs 混成高价-量）。
+* **推断**：**价-额同步 vs 高价-量同步** 的二元方向判断。混成权重 0.026/0.974 ⇒ 接近 vwap。
+
+### alpha75
+`rank(correlation(vwap, volume, 4.24304)) < rank(correlation(rank(low), rank(adv50), 12.4413))`
+* **机械**：最简洁的一条比较型 —— 「均价-量相关秩」 vs 「低位-成交额相关秩」。
+* **推断**：基础量价关系 vs 低位资金流的相对强弱。
+
+### alpha76（`partial`）
+`max(rank(decay_linear(delta(vwap, 1.24383), 11.8259)), Ts_Rank(decay_linear(Ts_Rank(correlation(IndNeutralize(low, IndClass.sector), adv81, 8.14941), 19.5…), …))`
+* **机械**：max 型两段，第二段含 **sector 中性化的最低价** 与 adv81 的相关。
+* **推断**：均价动量 与「低位的资金流强度」取更强的一条。
+
+### alpha77
+`min(rank(decay_linear(((((high + low) / 2) + high) - (vwap + high)), 20.0451)), rank(decay_linear(correlation(((high + low) / 2), adv40, 3.1614), 5.64125)))`
+* **机械**：两段取 **min**；第一段整理后 = **中价 − 成交均价**（`high` 相消）。
+* **推断**：要求「**成交均价低于中价**」与「价-额相关弱」**同时成立**（min 语义 ⇒ 两者都要），与 alpha71/73 的 max 型互为镜像。
+
+### alpha78
+`(rank(correlation(sum(((low*0.352233) + (vwap*0.647767)), 19.7428), sum(adv40, 19.7428), 6.83313))^rank(correlation(rank(vwap), rank(volume), 5.7…)))`
+* **机械**：两个相关秩的**幂**。
+* **推断**：幂型非线性交互（同 67/69/70/80 族）；两底都是非负秩 ⇒ 与保号幂无差异。
+
+### alpha79（`partial`）
+`(rank(delta(IndNeutralize(((close*0.60733) + (open*0.39267)), IndClass.sector), 1.23438)) < rank(correlation(Ts_Rank(vwap, 3.60973), Ts_Rank(adv1…), …)))`
+* **机械**：布尔比较 —— 行业中性化混成价格(收盘/开盘)的变化秩 vs vwap 与成交额时序秩的相关。
+* **推断**：**个股价格变化 vs 量额结构** 的方向判断。
+
+### alpha80（`partial`）
+`((rank(Sign(delta(IndNeutralize(((open*0.868128) + (high*0.131872)), IndClass.industry), 4.04545)))^Ts_Rank(correlation(high, adv10, 5.11456), 5.…))`
+* **机械**：底是**符号**（`sign(delta(...))` ⇒ ±1/0）的秩，指数是「高点与 adv10 相关」的时序秩。
+* **推断**：用符号把**方向**与**强度**分离：方向来自行业中性化混成价格的变化，强度来自量额相关。
+  📌 底可能为 0（sign=0 时）且指数非整数 ⇒ 本库 `power(0, y) = 0`（按官方文档），此处的边界行为已有测试覆盖。
+
+---
+
 ### 待续（分批）
 
-已完成 **alpha1–alpha60**（三批）。剩余 **alpha61–alpha80、alpha81–alpha101**（两批）。
-标注纪律不变：**机械可读的归机械，推断的标推断**；嵌套极深的只给结构判断；
-凡与验证门槛有关的（如 `partial` 的成因、除零产生的 NaN）都指回 `docs/verification.md`/`docs/operators.md`，
-避免把「验证状态」与「经济含义」混为一谈。
+已完成 **alpha1–alpha80**（四批）。剩余 **alpha81–alpha101**（最后一批）。
+
+**本批（alpha61–80）的三个共性**（都是机械可核验的）：
+1. **小数窗口密集**：16.1219 / 22.4101 / 3.92795 这类论文调优常数几乎逐条出现 ⇒ 本库按论文 §3 用 `floor` 取整；
+2. **「混成价格」写法**：`open*a + low*(1-a)`、`close*a + vwap*(1-a)` 等，把两个字段加权混合（少数权重极端到接近恒等，如 alpha65 的 0.008/0.992、alpha66 的 0.966+0.034）；
+3. **布尔比较当信号**（`rank(A) < rank(B)` ⇒ True/False，常再乘 −1）与**幂交互**（`rank^rank`）；
+   本批的幂型底都是**非负秩** ⇒ 本库 `power` 与保号幂在此**无差异**（按官方文档定 `^` 语义后的边界情形）；
+4. **max / min 聚合**：alpha71/73/76 取强者，alpha77 取弱者（要求两个条件同时成立）。
