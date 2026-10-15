@@ -580,13 +580,134 @@
 
 ---
 
-### 待续（分批）
+---
 
-已完成 **alpha1–alpha80**（四批）。剩余 **alpha81–alpha101**（最后一批）。
+### alpha81
+`((rank(Log(product(rank((rank(correlation(vwap, sum(adv10, 49.6054), 8.47743))^4)), 14.9655))) < rank(correlation(rank(vwap), rank(volume), …)))`
+* **机械**：把「均价-成交额相关」取秩后做 **4 次方**，再 rank → product → log → rank，与另一相关秩做布尔比较。
+* **推断**：`^4` 让**高度同步**的样本被显著放大，再经 log/product 压缩 ⇒ 是一个「**极端同步日**计数」的变体。
 
-**本批（alpha61–80）的三个共性**（都是机械可核验的）：
-1. **小数窗口密集**：16.1219 / 22.4101 / 3.92795 这类论文调优常数几乎逐条出现 ⇒ 本库按论文 §3 用 `floor` 取整；
-2. **「混成价格」写法**：`open*a + low*(1-a)`、`close*a + vwap*(1-a)` 等，把两个字段加权混合（少数权重极端到接近恒等，如 alpha65 的 0.008/0.992、alpha66 的 0.966+0.034）；
-3. **布尔比较当信号**（`rank(A) < rank(B)` ⇒ True/False，常再乘 −1）与**幂交互**（`rank^rank`）；
-   本批的幂型底都是**非负秩** ⇒ 本库 `power` 与保号幂在此**无差异**（按官方文档定 `^` 语义后的边界情形）；
-4. **max / min 聚合**：alpha71/73/76 取强者，alpha77 取弱者（要求两个条件同时成立）。
+### alpha82（`partial`）
+`min(rank(decay_linear(delta(open, 1.46063), 14.8717)), Ts_Rank(decay_linear(correlation(IndNeutralize(volume, IndClass.sector), (open*0.…), …), …))`
+* **机械**：min 型两段；第二段对**成交量**做 sector 中性化。
+* **推断**：开盘变化的衰减秩 与「行业中性化后的量-价相关」取**较弱**的一条（两条件需同时成立）。
+
+### alpha83
+`(rank(delay(((high - low) / (sum(close,5)/5)), 2)) * rank(rank(volume))) / (((high - low) / (sum(close,5)/5)) / (vwap - close))`
+* **机械**：**相对振幅**（日内振幅 ÷ 5 日均价）延迟 2 日的秩 × 量秩，再除以「相对振幅 ÷ (vwap − close)」。
+* **推断**：**振幅 × 成交量 ÷ 均价偏离** 的复合。📌 在 A 股 L6 辅助统计里它是 IC 最强的一档
+  （属**观察**，不是正确性证据，也不参与状态判定，见 `reports/l6_summary.md`）。
+
+### alpha84
+`SignedPower(Ts_Rank((vwap - ts_max(vwap, 15.3217)), 20.7127), delta(close, 4.96796))`
+* **机械**：**显式 `SignedPower`**（保号幂）——底是「均价距 15 日高点」的 20.71 日时序秩，指数是 4.97 日价格变化。
+* **推断**：用**保号幂**把「方向」（指数符号）与「幅度」（底的秩）合成。
+  📌 这条是本库区分 `^`（官方 `power`，非整数指数丢符号）与 `SignedPower`（保号）的**实证样本**之一
+  （见 `docs/operators.md` §3.11 与 §3.13.1）。
+
+### alpha85
+`(rank(correlation(((high*0.876703) + (close*0.123297)), adv30, 9.61331))^rank(correlation(Ts_Rank(mid, 3.70596), Ts_Rank(…), …)))`
+* **机械**：两个相关秩的**幂**（底均为非负秩）。
+* **推断**：幂型非线性交互（同 67/69/70/78 族）。
+
+### alpha86
+`((Ts_Rank(correlation(close, sum(adv20, 14.7444), 6.00049), 20.4195) < rank(((open + close) - (vwap + open)))) * -1)`
+* **机械**：布尔比较；右侧整理后 `open` 相消 ⇒ **`close − vwap`**。
+* **推断**：**价-额相关的持续性** vs **收盘高于成交均价** ⇒ 反向表述。
+
+### alpha87（`partial`）
+`max(rank(decay_linear(delta(((close*0.369701) + (vwap*0.630299)), 1.91233), 2.65461)), Ts_Rank(decay_linear(abs(correlation(IndNe…), …), …))`
+* **机械**：max 型；第二段对相关取 **绝对值**，并含行业中性化。
+* **推断**：取强者；用 `abs` ⇒ 只关心量价**同步强度**、不关心方向。
+
+### alpha88
+`min(rank(decay_linear(((rank(open) + rank(low)) - (rank(high) + rank(close))), 8.06882)), Ts_Rank(decay_linear(correlation(Ts_Rank(close, 8.…), …)))`
+* **机械**：min 型；第一段是**四个秩的线性组合**（开盘+最低 − 最高−收盘 ⇒ 日内位置）。
+* **推断**：要求「日内偏弱」与另一条件同时成立。
+
+### alpha89（`partial`）
+`(Ts_Rank(decay_linear(correlation(((low*0.967285) + (low*0.032715)), adv10, 6.94279), 5.51607), 3.79744) - Ts_Rank(decay_linear(…), …))`
+* **机械**：两段时序秩相减；`low` 的加权和**恒等于 low**（又一个论文加权写法冗余的实例）。
+* **推断**：**低位-成交额同步** 与另一段（量额结构）的差。
+
+### alpha90（`partial`）
+`((rank((close - ts_max(close, 4.66719)))^Ts_Rank(correlation(IndNeutralize(adv40, IndClass.subindustry), low, 5.38375), 3.21856)) * -1)`
+* **机械**：底＝「收盘距 4.67 日高点」的秩，指数＝**子行业中性化的成交额**与最低价相关的时序秩；取负。
+* **推断**：**行业中性化后的资金流** 与 **价格位置** 的幂交互。
+
+### alpha91（`partial`）
+`(Ts_Rank(decay_linear(decay_linear(correlation(IndNeutralize(close, IndClass.industry), volume, 9.74928), 16.398), 3.83219), 4.8667) - rank(…))`
+* **机械**：罕见的**双层 `decay_linear`**（衰减套衰减）+ industry 中性化。
+* **推断**：多尺度平滑后的量价相关，再与另一段相减。
+
+### alpha92
+`min(Ts_Rank(decay_linear(((((high + low)/2) + close) < (low + open)), 14.7221), 18.8683), Ts_Rank(decay_linear(correlation(rank(low), rank(…), …), …)))`
+* **机械**：min 型；第一段是**布尔比较**（整理后 `close < low + open − mid`）的衰减时序秩。
+* **推断**：日内强弱 与 量价关系 的双条件（都满足才得分）。
+
+### alpha93（`partial`）
+`(Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), adv81, 17.4193), 19.848), 7.54455) / rank(decay_linear(delta((close…), …), …)))`
+* **机械**：**相除** —— 分子是 industry 中性化的均价-成交额相关；分母是混成价格的衰减变化秩。
+* **推断**：相对强度。⚠️ 分母秩可为 0 ⇒ 部分交易日输出 **NaN**（除零语义，不掩盖）。
+
+### alpha94
+`((rank((vwap - ts_min(vwap, 11.5783)))^Ts_Rank(correlation(Ts_Rank(vwap, 19.6462), Ts_Rank(adv60, 4.02992), 18.0926), 2.70756)) * -1)`
+* **机械**：幂型 —— 底＝均价距 11.58 日低点的秩；指数＝「均价时序秩 与 成交额时序秩」的相关再做时序秩；取负。
+* **推断**：**均价抬升 × 量额同步的持续性**（非线性交互）。
+
+### alpha95
+`(rank((open - ts_min(open, 12.4105))) < Ts_Rank((rank(correlation(sum(mid, 19.1351), sum(adv40, 19.1351), 12.8742))^5), 11.75…))`
+* **机械**：布尔比较；右侧是「相关秩的**五次方**」再做时序秩（底非负）。
+* **推断**：`^5` 极端强调**高同步**样本（与 alpha81 的 `^4` 同思路）。
+
+### alpha96
+`max(Ts_Rank(decay_linear(correlation(rank(vwap), rank(volume), 3.83878), 4.16783), 8.38151), Ts_Rank(decay_linear(Ts_ArgMax(correlation(Ts_…), …), …)))`
+* **机械**：max 型；第二段含 **`ts_argmax`**（时序位置）。
+* **推断**：量价同步的两种刻画（**水平**与**时点**）取强者。
+  📌 本库曾修正 `ts_argmax` 的基准（官方是 `days_ago`，今天=0），这条是受影响因子之一。
+
+### alpha97（`partial`）
+`((rank(decay_linear(delta(IndNeutralize(((low*0.721001) + (vwap*0.278999)), IndClass.industry), 3.3705), 20.4523)) - Ts_Rank(decay…))`
+* **机械**：industry 中性化混成价格的变化（长衰减 **20.45** 日）与另一时序秩相减。
+* **推断**：个股价格变化 vs 量额结构。
+  📌 本库曾因它的**覆盖率异常**（0.09%）顺藤摸到一处实现问题，修正后覆盖率 94.71%（详见 `docs/verification.md`）。
+
+### alpha98
+`(rank(decay_linear(correlation(vwap, sum(adv5, 26.4719), 4.58418), 7.18088)) - rank(decay_linear(Ts_Rank(Ts_ArgMin(correlation(rank(open), r…), …), …)))`
+* **机械**：两段相减；第二段含 **`ts_argmin`**（时序位置）。
+* **推断**：均价-成交额同步 vs 开盘相关性的**时点**特征。
+
+### alpha99
+`((rank(correlation(sum(mid, 19.8975), sum(adv60, 19.8975), 8.8136)) < rank(correlation(low, volume, 6.28259))) * -1)`
+* **机械**：布尔比较（中价-额 vs 低价-量），取负。
+* **推断**：与 alpha74/75 同族的方向判断。
+
+### alpha100（`partial`）
+`0 - (1 * (((1.5 * scale(indneutralize(indneutralize(rank((((close-low) - (high-close)) / (high-low)) * volume), IndClass.subindustry), IndClass.subindustry))) - scale(indneutralize((correlation(close, rank(adv20), 5) - rank(ts_argmin(close, 30))), IndClass.subindustry))) * (volume / adv20)))`
+* **机械**：**同一层级连续两次中性化**（subindustry 套 subindustry，全库罕见）+ 两段 `scale` 相减 × 相对成交量。
+* **推断**：**量加权的日内位置（行业中性）** 减去 **资金流/价格位置（行业中性）**，再按相对成交量放大。
+  本库最复杂的一条。📌 它也是我诊断参照侧「并列取号 / 窗口语义」时用的样本之一（`docs/verification.md` §1.12）。
+
+### alpha101
+`((close - open) / ((high - low) + .001))`
+* **机械**：**日内涨跌幅 ÷ 日内振幅**，分母加 `.001` 防除零。
+* **推断**：最简洁的一条 —— **收盘在当日区间中的相对位置**（带符号：收阳为正、收阴为负）。
+  📌 `.001` 是论文的防零常数、**不是窗口**，所以它不会出现在机械表的「窗口」列（那里按 ≥2.5 过滤）。
+
+---
+
+## 四、写完 101 条之后：能提炼出什么（全部基于机械事实）
+
+1. **绝大多数是「短期反转 + 量价关系」**：rank/delta/correlation/stddev 四种骨架覆盖了绝大部分因子；
+   真正**顺势**的很少（alpha7/9/10/21 这类带状态机的）。
+2. **窗口以 3~20 日为主**，长窗口（200/230/240/250 日）只出现在少数因子（alpha19/24/32/37/39/48/52）。
+3. **论文后半段（61–101）大量使用小数窗口与「混成价格」写法**；少数混成权重极端到接近恒等
+   （alpha59/65/66/89），属论文写法冗余，**对含义无影响但对复现很关键**（必须逐字照抄）。
+4. **`^` 幂一律用于「非线性交互」**，且 61–101 段幂型的底都是**非负秩**；
+   唯一需要保号语义的是**显式 `SignedPower`**（alpha84）——这正是本库把 `^` 定为官方 `power`、
+   把 `SignedPower` 单列的原因。
+5. **19 个 `partial` 全部落在「含行业中性」或「需要市值」的两类里**；它们的“含义”与其它因子无异，
+   `partial` 只说明一件事：**缺独立逐点对拍这一门槛**（`docs/verification.md` §1.7）。
+
+> **一句话**：这 101 条不是 101 种经济学思想，而是**少数几种统计骨架（反转、量价、波动、位置）
+> 在不同窗口、不同字段组合、不同非线性变换下的重复变奏**。真正稀缺的不是条数，而是**每一条能否被验证**。
