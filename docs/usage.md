@@ -19,6 +19,20 @@ python examples/hello_alpha101.py        # 合成面板：不需要数据库、�
 
 ---
 
+## 0.5 ⚠️ 两个环境硬事实（踩过坑，写在这里省你时间）
+
+1. **默认 `python3` 不是本项目的解释器**：本机默认 `python3` 是 **3.8.8**（`/home/yinxiuqu/anaconda3/bin/python3`），
+   而本项目声明并实测在 **3.11.16**（`pyproject.toml` 的 `requires-python = ">=3.11"`）。
+   包**只装在 qa 环境**里，用默认解释器会 `ModuleNotFoundError`。请显式指定：
+
+   ```bash
+   /home/yinxiuqu/anaconda3/envs/qa/bin/python -m pytest -q     # 697 项
+   ```
+   ⚠️ **测试项数也依赖解释器**：同一份代码，用 3.8.8 收集会少很多（缺依赖/跳过），
+   所以「收集到 662 还是 697」不是代码变了，而是用错了解释器。
+2. **`requires-python` 只是元数据声明**：实测 3.8 也能 `import` 包（**但没有测试覆盖，不承诺可用**）——
+   声明为 ≥3.11 是「我们测过并承诺的范围」，不是「语法上跑不了」。
+
 ## 1. 五分钟上手（合成数据，可直接复制）
 
 ```python

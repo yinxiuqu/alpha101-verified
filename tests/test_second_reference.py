@@ -42,6 +42,14 @@ pytestmark = pytest.mark.skipif(
     reason="需要 parquet 引擎（pyarrow 或 fastparquet）写临时面板；环境缺件时显式跳过",
 )
 
+
+REFERENCE_VENV_MISSING = not (ROOT / ".refs" / "venv-ref" / "bin" / "python").exists()
+_NEEDS_VENV = pytest.mark.skipif(
+    REFERENCE_VENV_MISSING,
+    reason="第二参照的独立 venv 不存在（.refs/venv-ref，约 254MB、可随时用 "
+           "bash tools/fetch_second_reference.sh 重建）；缺它时显式跳过而非报错",
+)
+
 def _tool():
     spec = importlib.util.spec_from_file_location("_second_ref", ROOT / "tools" / "second_reference_differential.py")
     module = importlib.util.module_from_spec(spec)
@@ -57,6 +65,7 @@ def test_window_candidates_exclude_small_constants():
     assert tool.fractional_window_constants(expression) == [3.43976]
 
 
+@_NEEDS_VENV
 def test_rounding_conflict_requires_round_to_differ_from_floor():
     """4.25197 的 round 和 floor 都是 4 ⇒ 无差异，不算冲突；9.78759 ⇒ 10 vs 9 ⇒ 冲突。"""
     tool = _tool()
@@ -65,6 +74,7 @@ def test_rounding_conflict_requires_round_to_differ_from_floor():
     assert conflicts["b"] == [9.78759]
 
 
+@_NEEDS_VENV
 def test_rank_alignment_shifts_ordinal_to_zero_based():
     """★ 参照 rank 是 0..n−1；本库 ordinal 是 1..n ⇒ 对齐后必须减 1（否则 rank 相乘的因子全错）。"""
     tool = _tool()
@@ -83,6 +93,7 @@ def test_rank_alignment_shifts_ordinal_to_zero_based():
             tool.factors.power = power
 
 
+@_NEEDS_VENV
 def test_reference_long_table_columns_and_adv_alignment():
     """长表列名必须与参照的 `REQUIRED_SOURCE_COLUMNS` 对齐，且 `amount == volume*close`（adv 口径对齐）。"""
     tool = _tool()

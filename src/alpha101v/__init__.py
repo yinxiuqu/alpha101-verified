@@ -40,7 +40,20 @@ from .operators import (
     ts_sum,
 )
 
-__version__ = "0.1.0"
+def _resolve_version() -> str:
+    """版本号**单一来源**：优先读安装元数据（`pyproject.toml` 里的 version），
+    源码树直接 import（未安装）时回退。硬编码版本号曾与 pyproject 漂移过
+    （`__init__` 写 0.1.0、dist 是 0.1.1），因此有 tests/test_version.py 专门守这条。
+    """
+    try:
+        from importlib.metadata import version as _v
+
+        return _v("alpha101v")
+    except Exception:  # noqa: BLE001 - 未安装/元数据缺失时回退
+        return "0.1.1"
+
+
+__version__ = _resolve_version()
 
 #: 20 个算子的名字（设计文档 §7.3 的 17 个 API + §8.1 的 rolling_rank + §8.3 的两个中性化变体）。
 #: ``tests/test_operators.py::test_api_surface_is_exactly_twenty`` 会守住这个清单。
