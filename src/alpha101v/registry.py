@@ -102,7 +102,7 @@ def run_factor(
     panel: Mapping[str, pd.DataFrame],
     *,
     copy_inputs: bool = True,
-    extremes: str = "nan",   # "nan"（默认，平台口径）| "winsorize"（BRAIN 官方 ±4σ clip）
+    extremes: str = "nan",   # "nan"（默认）| "winsorize"（有限值 ±4σ clip，inf 仍为 NaN）
 ) -> pd.DataFrame:
     """按 :data:`REGISTRY` 取因子，并从面板按形参名自动装配后调用（§7.5）。
 
@@ -127,9 +127,9 @@ def run_factor(
         # ⚠️ 这会改变数值 ⇒ 与 golden/差分/平台算例对拍时必须用默认 "nan"。
         from .extreme import winsorize_std
 
-        # 按 BRAIN 官方 winsorize(x, std=4)：clip 到「截面均值 ± 4 倍截面标准差」。
-        # ±inf 属于「超出 ±4σ」⇒ 落到边界（研究口径下保留爆炸信号的排序），
-        # 而默认的 "nan" 口径仍把 ±inf 当未定义 ⇒ NaN。
+        # 按 BRAIN 官方 winsorize(x, std=4)：把**有限值** clip 到「截面均值 ± 4σ」。
+        # ±inf 仍按三分类原则 ① 处理 ⇒ NaN（因为无法从 inf 区分「除零」与「溢出」；
+        # 要保留溢出尾部，请显式调用 extreme.bound_inf / winsorize_std(keep_inf_bound=True)）。
         result = winsorize_std(result, std=4.0)
     elif extremes != "nan":  # pragma: no cover - 参数校验
         raise ValueError(f'extremes 只接受 "nan" / "winsorize"，收到 {extremes!r}')

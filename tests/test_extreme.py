@@ -6,7 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alpha101v.extreme import count_extremes, winsorize_inf, winsorize_std
+from alpha101v.extreme import (
+    bound_inf,
+    count_extremes,
+    mask_small_denominator,
+    winsorize_inf,
+    winsorize_std,
+)
 
 
 def _frame() -> pd.DataFrame:
@@ -80,12 +86,38 @@ def test_winsorize_std_clips_to_four_sigma():
     assert row["C"] == pytest.approx(3.0), "区间内的值不得改动"
 
 
-def test_winsorize_std_treats_inf_as_beyond_bound():
-    """±inf 是「超出 ±4σ」⇒ 落到边界；而 NaN 保持 NaN。"""
+def test_winsorize_std_keeps_inf_as_nan_by_default():
+    """★ 三分类原则 ①：默认口径下 ±inf ⇒ NaN（无法从 inf 区分除零与溢出）。"""
     frame = pd.DataFrame([[1.0, 2.0, np.inf, -np.inf, np.nan]],
                          index=[pd.Timestamp("2024-01-02")], columns=list("ABCDE"))
-    out = winsorize_std(frame, std=4.0)
-    row = out.iloc[0]
-    assert np.isfinite(row["C"]) and np.isfinite(row["D"]), "inf 应被 clip 成有限边界值"
-    assert row["C"] > row["D"], "上界 > 下界"
+    row = winsorize_std(frame, std=4.0).iloc[0]
+    assert np.isnan(row["C"]) and np.isnan(row["D"]), "默认：±inf 必须变 NaN（不得伪装成极端信号）"
     assert np.isnan(row["E"]), "NaN 不得被填充"
+
+
+def test_winsorize_std_keep_inf_bound_is_opt_in_for_overflow():
+    """★ 三分类原则 ③：显式开启后，inf 才落到截面边界（前提：已确认是溢出）。"""
+    frame = pd.DataFrame([[1.0, 2.0, np.inf, -np.inf, np.nan]],
+                         index=[pd.Timestamp("2024-01-02")], columns=list("ABCDE"))
+    row = winsorize_std(frame, std=4.0, keep_inf_bound=True).iloc[0]
+    assert np.isfinite(row["C"]) and np.isfinite(row["D"]), "显式开启后 inf 落到边界"
+    assert row["C"] > row["D"], "上界 > 下界"
+    assert np.isnan(row["E"])
+
+
+def test_bound_inf_replaces_with_finite_extremes():
+    frame = pd.DataFrame([[1.0, 2.0, np.inf, -np.inf]], index=[pd.Timestamp("2024-01-02")],
+                         columns=list("ABCD"))
+    row = bound_inf(frame).iloc[0]
+    assert row["C"] == 2.0 and row["D"] == 1.0
+
+
+def test_mask_small_denominator_is_the_compute_layer_fix():
+    """★ 三分类原则 ①②：按**分母**掩码，而不是事后猜 inf。"""
+    numer = pd.DataFrame([[1.0, 1.0, 1.0]], index=[pd.Timestamp("2024-01-02")], columns=list("ABC"))
+    denom = pd.DataFrame([[0.0, 1e-15, 2.0]], index=numer.index, columns=numer.columns)
+    out = mask_small_denominator(numer, denom, eps=1e-12)
+    row = out.iloc[0]
+    assert np.isnan(row["A"]), "分母为 0 ⇒ NaN"
+    assert np.isnan(row["B"]), "极小分母（1e-15 ≤ eps）⇒ NaN（巨大有限值不可靠）"
+    assert row["C"] == 0.5, "正常分母照常计算"
