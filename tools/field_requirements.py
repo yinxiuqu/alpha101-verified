@@ -37,7 +37,7 @@ FIELD_NOTES = {
     "Open": "开盘价（**必须复权**）",
     "high": "最高价（**必须复权**）",
     "low": "最低价（**必须复权**）",
-    "volume": "成交量（股数）",
+    "volume": "成交量（**手**；1 手 = 100 股 —— 与 `panel.py` 的口径一致，换算成股数要 ×100）",
     "vwap": "成交均价（论文 vwap；无 vwap 时可用 `amount/volume` 近似）",
     "returns": "日收益率（`close.pct_change(fill_method=None)`，首行留 NaN）",
     "amount": "成交额（元）——**论文的 `adv{d}` 是美元成交额**，用 volume 替代属近似",
