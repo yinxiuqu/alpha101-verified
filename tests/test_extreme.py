@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from alpha101v.extreme import count_extremes, winsorize_inf
+from alpha101v.extreme import count_extremes, winsorize_inf, winsorize_std
 
 
 def _frame() -> pd.DataFrame:
@@ -66,3 +66,26 @@ def test_run_factor_default_is_nan_and_winsorize_is_opt_in():
     assert count_extremes(default)["nan"] >= count_extremes(explicit)["nan"], (
         "winsorize 应把原本因 inf 变成的 NaN 补回有限值（NaN 数不增加）"
     )
+
+
+def test_winsorize_std_clips_to_four_sigma():
+    """★ BRAIN 官方口径：clip 到 mean ± 4σ；大但有限的值也会被裁，inf 落到边界，NaN 不动。"""
+    normal = pd.DataFrame([[1.0, 2.0, 3.0, 4.0, 5.0]], index=[pd.Timestamp("2024-01-02")],
+                          columns=list("ABCDE"))
+    mean, spread = 3.0, float(np.std([1, 2, 3, 4, 5]))     # σ = sqrt(2)
+    out = winsorize_std(normal, std=1.0)                   # 用 1σ 便于观察裁剪
+    row = out.iloc[0]
+    assert row["A"] == pytest.approx(mean - 1.0 * spread)
+    assert row["E"] == pytest.approx(mean + 1.0 * spread)
+    assert row["C"] == pytest.approx(3.0), "区间内的值不得改动"
+
+
+def test_winsorize_std_treats_inf_as_beyond_bound():
+    """±inf 是「超出 ±4σ」⇒ 落到边界；而 NaN 保持 NaN。"""
+    frame = pd.DataFrame([[1.0, 2.0, np.inf, -np.inf, np.nan]],
+                         index=[pd.Timestamp("2024-01-02")], columns=list("ABCDE"))
+    out = winsorize_std(frame, std=4.0)
+    row = out.iloc[0]
+    assert np.isfinite(row["C"]) and np.isfinite(row["D"]), "inf 应被 clip 成有限边界值"
+    assert row["C"] > row["D"], "上界 > 下界"
+    assert np.isnan(row["E"]), "NaN 不得被填充"

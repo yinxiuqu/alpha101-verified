@@ -29,7 +29,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-__all__ = ["count_extremes", "winsorize_inf"]
+__all__ = ["count_extremes", "winsorize_inf", "winsorize_std"]
 
 
 def count_extremes(frame: pd.DataFrame) -> dict[str, int]:
@@ -81,3 +81,45 @@ def winsorize_inf(frame: pd.DataFrame, *, axis: int = 1) -> pd.DataFrame:
             raise ValueError("axis 只接受 0 或 1")
     replaced = np.where(np.isposinf(values), hi, np.where(np.isneginf(values), lo, values))
     return pd.DataFrame(replaced, index=out.index, columns=out.columns)
+
+
+def winsorize_std(frame: pd.DataFrame, *, std: float = 4.0, axis: int = 1) -> pd.DataFrame:
+    """**BRAIN 官方口径**的 winsorize：把值 clip 到「均值 ± ``std`` 倍标准差」区间内。
+
+    官方原文（`operator_winsorize`）："The winsorize(x, std=4) operator adjusts all values in the
+    input vector x so that they fall within the lower and upper bounds, which are set as multiples
+    of the standard deviation from the mean. By default, values beyond ±4 standard deviations are
+    replaced with the nearest boundary value."
+
+    与 :func:`winsorize_inf` 的分工：
+
+    * 本函数是**官方语义**：按 σ 定界、**大但有限的值也会被裁剪**（保留极端信息但不让它主导）；
+    * ``±inf``（除零/溢出）**本身就是"超出 ±4σ"** ⇒ 会被 clip 到边界（研究口径下"爆表"仍保留排序信息）；
+      而**默认口径**（``extremes="nan"``）仍把 ±inf 视为未定义 ⇒ NaN（与 vnpy / BRAIN 的
+      「dividing by zero raises an error」一致）。
+
+    Notes
+    -----
+    * 均值/标准差按**每个截面**（``axis=1``，默认）nan-aware 计算，``ddof=0``（与本库 ``stddev`` 一致）；
+    * NaN 保持 NaN（既不参与统计、也不被填充）；某截面无有效值时整行保持 NaN；
+    * 只做 clip，**不改排序以外的信息量**：这正是「保留 4σ 信息」的常用做法。
+    """
+    out = frame.copy()
+    values = out.to_numpy(dtype=float)
+    if values.size == 0:
+        return out
+
+    data = np.where(np.isinf(values), np.nan, values)      # 统计量不能用 inf 算
+    with np.errstate(invalid="ignore"):
+        if axis == 1:
+            mean = np.nanmean(data, axis=1, keepdims=True)
+            spread = np.nanstd(data, axis=1, ddof=0, keepdims=True)
+        elif axis == 0:
+            mean = np.nanmean(data, axis=0, keepdims=True)
+            spread = np.nanstd(data, axis=0, ddof=0, keepdims=True)
+        else:  # pragma: no cover
+            raise ValueError("axis 只接受 0 或 1")
+        lower, upper = mean - std * spread, mean + std * spread
+        # inf 比任何有限上界都大（-inf 比下界都小）⇒ clip 后自然落到边界；NaN 仍为 NaN
+        clipped = np.clip(values, lower, upper)
+    return pd.DataFrame(clipped, index=out.index, columns=out.columns)
