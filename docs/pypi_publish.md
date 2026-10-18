@@ -52,3 +52,14 @@ curl -s https://pypi.org/pypi/alpha101v/json | python -c "import json,sys; d=jso
 # 或（新环境，装回来的必须是同一个版本）
 python -m pip install alpha101v==X.Y.Z && python -c "import alpha101v; print(alpha101v.__version__)"
 ```
+
+## 四、两个真实踩过的坑（2026-10-18 首次发布时）
+
+1. **`release` 事件用的是「tag 所在提交」里的 workflow 文件** —— `v0.1.2` 的 tag 指向 `6f10899`，
+   而 `publish.yml` 是在其后的 `a983acf` 才加入的 ⇒ **发布 Release 时没有触发任何运行** ✗
+   （Actions 里该工作流 `total_count = 0`）。
+   ⇒ 以后发版：**先确保 `publish.yml` 已在 tag 指的那个提交里**（先推工作流，再打 tag），
+   或临时手动触发：Actions → Publish to PyPI → Run workflow（`workflow_dispatch`）。
+2. **`workflow_dispatch` 下 `GITHUB_REF_NAME` 是分支名**（`main`），不是 tag ⇒
+   若自检脚本无条件拿它当版本号，会以 `test "main" = "0.1.2"` 失败 ✗。
+   ⇒ 自检现在**事件无关**：release 事件比 tag，手动触发比「pyproject 版本 vs dist 产物文件名」。

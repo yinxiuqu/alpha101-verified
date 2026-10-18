@@ -25,13 +25,21 @@ jobs:
           python -m build
       - name: 校验 metadata（PyPI 不允许覆盖已发布版本，宁可在这里失败）
         run: twine check dist/*
-      - name: 自检：包内版本号必须与 tag 一致
-        # 防止「发了 vX.Y.Z 的 tag，但 pyproject 里还是旧版本」——版本号一旦被占掉就不可改
+      - name: 自检：版本号三方一致（事件无关）
+        # 防止「发了 vX.Y.Z 的 tag，但 pyproject/产物里还是旧版本」——版本号一旦被占掉就不可改。
+        # ⚠️ 事件无关：release 事件下 GITHUB_REF_NAME 是 tag；workflow_dispatch 下是**分支名**
+        #    （曾因写死 tag 比较，导致手动触发的自检把 "main" 当成版本号而失败）。
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
           VER=$(python -c "import re,pathlib;print(re.search(r'^version\s*=\s*\"([^\"]+)\"', pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
-          echo "tag=$GITHUB_REF_NAME pyproject=$VER"
-          test "$TAG" = "$VER"
+          echo "pyproject version = $VER ; event=$GITHUB_EVENT_NAME ; ref=$GITHUB_REF"
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            REF_VER="${GITHUB_REF_NAME#v}"
+            echo "tag version = $REF_VER"
+            test "$REF_VER" = "$VER" || { echo "❌ tag($REF_VER) 与 pyproject($VER) 不一致"; exit 1; }
+          else
+            echo "（非 release 事件：跳过 tag 比较，改为校验产物文件名带同一版本号）"
+          fi
+          ls dist/ | grep -q "$VER" || { echo "❌ dist/ 里没有版本号 $VER 的产物"; exit 1; }
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         # 不需要 password：OIDC 自动认证
