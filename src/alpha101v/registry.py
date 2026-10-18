@@ -102,6 +102,7 @@ def run_factor(
     panel: Mapping[str, pd.DataFrame],
     *,
     copy_inputs: bool = True,
+    extremes: str = "nan",
 ) -> pd.DataFrame:
     """按 :data:`REGISTRY` 取因子，并从面板按形参名自动装配后调用（§7.5）。
 
@@ -120,7 +121,16 @@ def run_factor(
         value = panel[field]
         kwargs[field] = value.copy(deep=True) if copy_inputs and isinstance(value, pd.DataFrame) else value
 
-    return _sanitize(meta.func(**kwargs))
+    result = _sanitize(meta.func(**kwargs))
+    if extremes == "winsorize":
+        # 显式选择：把 ±inf 替换为该截面最大/最小有限值（保留「爆表」的排序信息）。
+        # ⚠️ 这会改变数值 ⇒ 与 golden/差分/平台算例对拍时必须用默认 "nan"。
+        from .extreme import winsorize_inf
+
+        result = winsorize_inf(result)
+    elif extremes != "nan":  # pragma: no cover - 参数校验
+        raise ValueError(f'extremes 只接受 "nan" / "winsorize"，收到 {extremes!r}')
+    return result
 
 
 def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
