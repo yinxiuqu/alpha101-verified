@@ -50,7 +50,7 @@ def _resolve_version() -> str:
 
         return _v("alpha101v")
     except Exception:  # noqa: BLE001 - 未安装/元数据缺失时回退
-        return "0.1.1"
+        return "0.1.2"
 
 
 __version__ = _resolve_version()
