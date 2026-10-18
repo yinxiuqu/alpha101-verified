@@ -44,7 +44,7 @@ vnpy（MIT）仅作测试期参照并署名；运行时依赖只有 `numpy / pan
 ```bash
 PY=/home/yinxiuqu/anaconda3/envs/qa/bin/python     # Python 3.11 / pandas 2.3.3
 
-$PY -m pytest -q                                   # 全量（含变异测试，约 2~3 分钟）
+$PY -m pytest -q                                   # 全量（含变异测试，约 15~20 分钟；早期算子层闸门才是 2~3 分钟）
 $PY -m pytest tests/test_operators.py -q           # M1 闸门：算子层 20/20
 $PY -m pytest tests/test_mutation.py -q            # 变异测试：7/7 注入必须被抓住
 ```
