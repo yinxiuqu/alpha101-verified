@@ -281,6 +281,41 @@ def _ordinal_rank(window_values: np.ndarray) -> float:
     return float(np.asarray(rankdata(values))[-1])
 
 
+def _ordinal_rank_matrix(frame: pd.DataFrame, window: int) -> pd.DataFrame:
+    """``ts_rank`` 的**向量化内核**：每个窗口末值的 average 名次（1..n，未归一化）。
+
+    数学恒等：窗口末值 x 的 average 名次 = ``1 + #{< x} + (#{== x} − 1) / 2``
+    （与 ``scipy.stats.rankdata(win)[-1]`` 逐位相同）。用 ``window`` 次**整列**比较即可算出，
+    完全避开 ``rolling().apply`` 的逐窗口 Python 回调 —— 这是全市场构建的主要算力瓶颈
+    （``ts_rank`` 被 57 个因子使用）。
+
+    等价性由三层证据守着：``tests/test_operators.py`` 的 ts_rank 用例、golden 快照的**位级**
+    比对、以及算子层差分（对 vnpy）。``valid`` 掩码保证「窗口内任一元素非有限 ⇒ NaN」，
+    与 :func:`_ordinal_rank` 的原语义一致（``inf`` 同样视为无效）。
+    """
+    arr = frame.to_numpy(dtype=float)
+    rows, cols = arr.shape
+    out = np.full((rows, cols), np.nan, dtype=float)
+    if window < 1 or rows < window:
+        return pd.DataFrame(out, index=frame.index, columns=frame.columns)
+
+    last = arr[window - 1:]
+    less = np.zeros_like(last)
+    equal = np.zeros_like(last)
+    valid = np.ones(last.shape, dtype=bool)
+    for offset in range(window):
+        current = arr[offset:rows - window + 1 + offset]
+        valid &= np.isfinite(current)
+        less += current < last
+        equal += current == last
+
+    with np.errstate(invalid="ignore"):
+        rank = 1.0 + less + (equal - 1.0) / 2.0
+    rank[~valid] = np.nan
+    computed = pd.DataFrame(rank, index=frame.index[window - 1:], columns=frame.columns)
+    return computed.reindex(frame.index)
+
+
 def rolling_rank(window_values: np.ndarray, normalization: str = "zero_to_one") -> float:
     """单窗口辅助函数：返回窗口**末值**的名次（并列取 average），按 ``normalization`` 归一化。
 
@@ -302,7 +337,7 @@ def ts_rank(df: pd.DataFrame, window: int | float, normalization: str = "zero_to
     严格预热（``min_periods=window``）不变 ⇒ 窗口内无 NaN。
     """
     df, window = _prep_win(df, window)
-    ordinal = df.rolling(window=window, min_periods=window).apply(_ordinal_rank, raw=True)
+    ordinal = _ordinal_rank_matrix(df, window)
     return _normalize_ranks(ordinal, float(window), normalization)
 
 

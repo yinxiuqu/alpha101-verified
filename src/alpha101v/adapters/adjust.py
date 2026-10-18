@@ -137,13 +137,22 @@ def load_xdxr_events(
 
 
 def cumulative_factors(
-    close: pd.DataFrame, events: pd.DataFrame, *, mode: str = "hfq"
+    close: pd.DataFrame,
+    events: pd.DataFrame,
+    *,
+    mode: str = "hfq",
+    anchor_date=None,
 ) -> pd.DataFrame:
     """累计复权因子面板（与 ``close`` 同形，逐股票取值）。
 
     * 事件日若不是交易日，映射到**该日或之后第一个交易日**（用 ``searchsorted``）；
-    * 缺少前收（事件在面板首行或之前）的事件**跳过**；
-    * ``hfq`` 归一化到首行 = 1（因果）；``qfq`` 归一化到末行 = 1（非因果，仅供展示）。
+    * **前收取「该事件日之前最后一个非 NaN 的收盘」**（跳过停牌）——修 bug A：
+      原实现用 ``series.iloc[position-1]``，若中间有停牌（NaN）会把除权事件**静默当成 1.0**，
+      导致「同一股票单独请求 vs 与别人一起请求」结果不同；
+    * ``anchor_date`` 给定时，**该日期的因子被归一为 1**，且结果**与请求窗口/批次无关**（修 bug B）；
+      调用方应传入固定的 ``ref_date``（锚从哪来是调用方的事：库只保证「给定锚，算得对」）；
+    * 未给 ``anchor_date`` 时保留历史语义：``hfq`` 归一化到面板**首行** = 1（因果，但**依赖窗口**）、
+      ``qfq`` 归一化到**末行** = 1（非因果，仅供展示）。跨窗口复现请显式传 ``anchor_date``。
     """
     if mode not in ADJUST_MODES:
         raise ValueError(f"mode 只接受 {ADJUST_MODES}，收到 {mode!r}")
@@ -165,7 +174,11 @@ def cumulative_factors(
             position = int(series.index.searchsorted(row.date))
             if position <= 0 or position >= len(series):
                 continue  # 面板首行或窗口之外：无前收，跳过
-            prev_close = series.iloc[position - 1]
+            # 修 bug A：向前找「事件日之前最后一个非 NaN 的收盘」（跳过停牌/缺数据）
+            prior = series.iloc[:position].dropna()
+            if prior.empty:
+                continue
+            prev_close = prior.iloc[-1]
             ref = reference_price(
                 prev_close, row.fenhong, row.songzhuangu, row.peigu, row.peigujia
             )
@@ -180,7 +193,16 @@ def cumulative_factors(
             column[position:] *= ratio
         factors[code] = column
 
-    if mode == "qfq":
+    if anchor_date is not None:
+        # 显式锚：该日期因子归一为 1 ⇒ 结果与窗口/批次无关（修 bug B）
+        anchor = pd.Timestamp(anchor_date)
+        if anchor not in factors.index:
+            position = int(factors.index.searchsorted(anchor))
+            position = min(max(position, 0), len(factors.index) - 1)
+            anchor = factors.index[position]
+        row = factors.loc[anchor].replace(0.0, np.nan)
+        factors = factors.div(row, axis=1).fillna(1.0)
+    elif mode == "qfq":
         tail = factors.iloc[-1].replace(0.0, np.nan)
         factors = factors.div(tail, axis=1).fillna(1.0)
     return factors
