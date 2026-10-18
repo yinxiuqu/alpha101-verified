@@ -102,7 +102,6 @@ def run_factor(
     panel: Mapping[str, pd.DataFrame],
     *,
     copy_inputs: bool = True,
-    extremes: str = "nan",   # "nan"（默认）| "winsorize"（有限值 ±4σ clip，inf 仍为 NaN）
 ) -> pd.DataFrame:
     """按 :data:`REGISTRY` 取因子，并从面板按形参名自动装配后调用（§7.5）。
 
@@ -121,19 +120,7 @@ def run_factor(
         value = panel[field]
         kwargs[field] = value.copy(deep=True) if copy_inputs and isinstance(value, pd.DataFrame) else value
 
-    result = _sanitize(meta.func(**kwargs))
-    if extremes == "winsorize":
-        # 显式选择：把 ±inf 替换为该截面最大/最小有限值（保留「爆表」的排序信息）。
-        # ⚠️ 这会改变数值 ⇒ 与 golden/差分/平台算例对拍时必须用默认 "nan"。
-        from .extreme import winsorize_std
-
-        # 按 BRAIN 官方 winsorize(x, std=4)：把**有限值** clip 到「截面均值 ± 4σ」。
-        # ±inf 仍按三分类原则 ① 处理 ⇒ NaN（因为无法从 inf 区分「除零」与「溢出」；
-        # 要保留溢出尾部，请显式调用 extreme.bound_inf / winsorize_std(keep_inf_bound=True)）。
-        result = winsorize_std(result, std=4.0)
-    elif extremes != "nan":  # pragma: no cover - 参数校验
-        raise ValueError(f'extremes 只接受 "nan" / "winsorize"，收到 {extremes!r}')
-    return result
+    return _sanitize(meta.func(**kwargs))
 
 
 def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
