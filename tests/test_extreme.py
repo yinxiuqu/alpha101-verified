@@ -40,7 +40,18 @@ def test_winsorize_leaves_all_nan_row_alone():
 
 def test_count_extremes_diagnostic():
     stats = count_extremes(_frame())
-    assert stats == {"pos_inf": 1, "neg_inf": 1, "nan": 6, "cells": 10}
+    assert stats["pos_inf"] == 1 and stats["neg_inf"] == 1
+    assert stats["nan"] == 6 and stats["cells"] == 10
+    assert stats["huge_finite"] == 0
+
+
+def test_count_extremes_flags_huge_finite_values():
+    """★ 三分类 ②：极小分母产生的巨大**有限**值要被计数（默认路径不处理它，但必须可见）。"""
+    frame = pd.DataFrame([[1e15, 2.0, -3e14]], index=[pd.Timestamp("2024-01-02")],
+                         columns=list("ABC"))
+    stats = count_extremes(frame, huge=1e12)
+    assert stats["huge_finite"] == 2
+    assert stats["pos_inf"] == 0 and stats["neg_inf"] == 0
 
 
 def test_run_factor_default_is_nan_and_winsorize_is_opt_in():

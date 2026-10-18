@@ -30,6 +30,11 @@
 * ③ 的显式方案 → :func:`bound_inf`（**前提**：已确认 inf 来自溢出而非除零）。
 
 默认策略 ``extremes="nan"``：±inf 一律 NaN（保守，对应 ① 与「来源不明」）。
+
+⚠️ 本库的**因子层不做分母检查**（改动论文原式会与 golden/差分/平台算例不可比）。
+已知会因 `rank` 取到 0 而除零的因子：``alpha42 / alpha57 / alpha72 / alpha93``（另有若干间接路径）。
+若你在意 ② 的「巨大有限值」，请用 :func:`count_extremes` 的 ``huge_finite`` 计数先看规模，
+再决定用 :func:`mask_small_denominator`（自建分母）或 ``extremes="winsorize"``。
 """
 
 from __future__ import annotations
@@ -40,17 +45,26 @@ import pandas as pd
 __all__ = ["bound_inf", "count_extremes", "mask_small_denominator", "winsorize_inf", "winsorize_std"]
 
 
-def count_extremes(frame: pd.DataFrame) -> dict[str, int]:
+def count_extremes(frame: pd.DataFrame, *, huge: float = 1e12) -> dict[str, int]:
     """统计极端值/缺失数量（**诊断用**，不修改数据）。
 
-    返回 ``{"pos_inf", "neg_inf", "nan", "cells"}``。建议在研究流程里记一笔：
-    「这次有多少格信号爆表」本身就是有用信息，不要让它静默消失。
+    返回 ``{"pos_inf", "neg_inf", "nan", "huge_finite", "cells"}``：
+
+    * ``pos_inf`` / ``neg_inf``：三分类 ① 或 ③ 的候选（来源需查分母才能定性）；
+    * ``huge_finite``：**绝对值超过 ``huge`` 的有限值** —— 三分类 ② 的信号
+      （极小分母导致的巨大有限值，**默认路径不会动它**，所以要靠这个计数让它可见）；
+    * ``nan``：缺失。
+
+    建议在研究流程里把这份计数记进台账：「这次有多少格爆表/巨型值」本身是有用信息，
+    不要让它静默消失。``huge`` 需按因子量纲自定（默认 1e12 只适用于 O(1) 量级的因子）。
     """
     values = frame.to_numpy(dtype=float)
+    finite = np.isfinite(values)
     return {
         "pos_inf": int(np.isposinf(values).sum()),
         "neg_inf": int(np.isneginf(values).sum()),
         "nan": int(np.isnan(values).sum()),
+        "huge_finite": int((finite & (np.abs(values) > huge)).sum()),
         "cells": int(values.size),
     }
 
