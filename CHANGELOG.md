@@ -2,6 +2,52 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.5] - 2026-10-19
+
+修 0.1.4 引入的问题 + 补齐 B4 + 接入 lint 关卡 + **更正 0.1.4 的性能声明**。
+
+### 🔴 N1 重复定义（真缺陷）
+
+`run_factor_raw` 在 `registry.py` 里被定义了两次（补丁重复粘贴），第二份覆盖第一份、签名还不一致
+（`panel: Mapping` vs `panels: dict`），pyflakes 会报 F811 ⇒ 删除重复定义、签名统一；
+新增 `test_no_duplicate_top_level_definitions`（AST 扫描，禁止同模块重复定义）。
+
+### 🟠 N2 B3 之前只修了一半
+
+`run_factor_raw` 存在但**不可发现**（不在 `__all__`、也没顶层导出）⇒ 用户仍会去碰 `meta.func`。
+现在**顶层导出并加入 `__all__`**，并新增 `test_run_factor_raw_is_discoverable`。
+
+### ✅ lint 关卡（用户建议）
+
+`pyproject` 增加 `[tool.ruff]`（只选能抓真 bug 的规则：`E9/F63/F7/F82/F811/F821`，不做风格限制），
+CI 增加 `ruff check src tools tests`。
+**接入当天就抓到一个真 bug**：`tools/second_reference_differential.py:209` 引用了从未定义的
+`ROUNDING_CONFLICTS`（F821；一个未被调用的死函数）⇒ 已删除。ruff 现已 0 error。
+
+### ✅ B4：研究口径的正规入口（方案 A）
+
+`factors.py` 里 **62 处** `decay_linear(...)` 都不传 `dense`（忠实官方 sparse 默认），而 `run_factor` 没有口径参数
+⇒ 想用严格口径只能 monkeypatch `alpha101v.factors.decay_linear`（且必须打 `factors.` 前缀，改 `operators.` 无效）。
+
+现在提供上下文开关（**默认行为完全不变** ⇒ golden/差分/平台对拍口径不动）：
+
+```python
+with alpha101v.research_mode():
+    factor = run_factor("alpha31", panel)     # 窗口必须完整，缺数据 ⇒ NaN
+```
+
+* `decay_linear(..., dense: bool | None = None)`：`None` 时读 `ContextVar`（线程/协程安全）；
+* **显式传参优先**；默认值恒为 `None` ⇒ 行为与 0.1.4 逐位一致（golden 无需重生成）。
+
+### 🟡 N3 性能声明更正（见上 0.1.4 条目）
+
+0.1.4 只报了合成面板的 10–19×，与真实面板（4.5–4.7×、小面板 1.3×、端到端 1.03×）不符 ⇒ 已在本文件与
+`docs/vectorization.md` 如实并列「合成 vs 真实」两组数字，并写明小面板可能变慢。
+
+### 验证
+
+`extreme + golden + operators` 72 项、`factors_all + usage` 314 项通过；ruff 0 error。
+
 ## [0.1.4] - 2026-10-19
 
 **性能版本**：两项算子向量化。规矩是「**没等价性就是失败**」—— 每项都给出机器可验证的等价性断言
@@ -15,8 +61,11 @@
   `Σ coef[k]·x[t−k]` 累加 ⇒ 末位可能不同（`ts_rank` 能做到逐位相等，是因为它本质是比较+整数计数）。
 * 断言：`tests/test_decay_equivalence.py`（**96 用例**）要求 NaN 掩码逐位相同 + `max|Δ| ≤ 1e-13` + `rel ≤ 1e-15`；
 * **golden 按此重新生成**（该 1 ulp 变化会触发位级守卫，属预期）；
-* 速度（同输入、预热后 3 次平均）：60×300 w=20 **671→62 ms（10.8×）**；200×500 w=20 **3757→198 ms（18.9×）**；
-  w=10 **14.8×**；w=5 **14.0×**。
+* 速度 —— ⚠️ **0.1.4 原文只报了合成面板的数字（10–19×），这是误导，0.1.5 更正如下**：
+  * **合成面板**（无 NaN；同输入、预热后 3 次平均）：60×300 w=20 **10.8×**、200×500 w=20 **18.9×**、w=10 **14.8×**、w=5 **14.0×**；
+  * **真实 A 股面板实测**：359×60 **1.3×**、400×1000 **4.5×**、400×3000 **4.7×**（w=20）；
+  * **101 因子端到端仅 1.03×**（37.0 s → 36.1 s），且 **8 个因子变慢**（小面板上按 window 次 `shift` 的分配开销超过 `rolling.apply`）。
+  * 结论：**大面板受益明显、小面板基本持平** —— 别把合成面板的 10–19× 当通用预期。
 
 ### `ts_argmax` / `ts_argmin` 向量化（6.8–11.6×）
 
