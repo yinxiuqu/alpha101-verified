@@ -75,3 +75,22 @@ def test_count_extremes_flags_huge_finite_values():
     stats = count_extremes(frame, huge=1e12)
     assert stats["huge_finite"] == 2
     assert stats["pos_inf"] == 0 and stats["neg_inf"] == 0
+
+
+def test_decay_linear_zero_observation_is_nan_not_zero():
+    """★ P0-1：稀疏模式下「窗口里一个有效值都没有」必须给 NaN，而不是 0.0（伪造数据）。"""
+    from alpha101v import operators as op
+
+    n = 6
+    frame = pd.DataFrame(
+        {"allnan": [np.nan] * n, "live": [1.0, 2, 3, 4, 5, 6]},
+        index=pd.date_range("2024-01-02", periods=n),
+    )
+    sparse = op.decay_linear(frame, 3)            # 官方 sparse 语义
+    strict = op.decay_linear(frame, 3, dense=True)
+
+    assert sparse["allnan"].isna().all(), "零观测窗口必须 NaN（原实现返回 0.0 ✗）"
+    assert strict["allnan"].isna().all()
+    assert not sparse["live"].iloc[2:].isna().any(), "有观测的列从第 3 行起不受影响（前两行是预热期）"
+    # 非零观测窗口仍按官方 sparse（NaN 计 0、分母为完整权重和）
+    assert np.isfinite(sparse["live"].iloc[-1])

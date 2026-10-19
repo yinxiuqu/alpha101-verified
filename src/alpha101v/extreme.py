@@ -37,7 +37,7 @@ import pandas as pd
 __all__ = ["bound_inf", "count_extremes", "mask_small_denominator"]
 
 
-def count_extremes(frame: pd.DataFrame, *, huge: float = 1e12) -> dict[str, int]:
+def count_extremes(frame: pd.DataFrame, *, huge: float | None = None) -> dict[str, int]:
     """统计极端值/缺失数量（**诊断用**，不修改数据）。
 
     返回 ``{"pos_inf", "neg_inf", "nan", "huge_finite", "cells"}``：
@@ -47,10 +47,15 @@ def count_extremes(frame: pd.DataFrame, *, huge: float = 1e12) -> dict[str, int]
       （极小分母导致的巨大有限值；默认路径不会改动它，所以必须让它**可见**）；
     * ``nan``：缺失。
 
-    ``huge`` 需按因子量纲自定（默认 1e12 只适用于 O(1) 量级的因子）。
+    ``huge`` 默认 **None** ⇒ 用「面板整体标准差 × 4」的尺度感知阈值（B8：
+    固定 1e12 与量纲脱节 —— rank 类因子 max≈39、alpha84 max≈1.4e9，同一个常数对两者都不合适）；
+    也可显式传一个按量纲自定的数。
     """
     values = frame.to_numpy(dtype=float)
     finite = np.isfinite(values)
+    if huge is None:
+        spread = float(np.nanstd(np.where(finite, values, np.nan)))
+        huge = 4.0 * spread if np.isfinite(spread) and spread > 0 else np.inf
     return {
         "pos_inf": int(np.isposinf(values).sum()),
         "neg_inf": int(np.isneginf(values).sum()),

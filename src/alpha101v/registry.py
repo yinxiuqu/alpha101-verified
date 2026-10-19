@@ -9,9 +9,7 @@
 面板（原始实现 ``alpha1`` 的真实事故，设计文档 §3.3 缺陷 2）。
 :func:`run_factor` 默认 ``copy_inputs=True`` 落实该前提。
 
-**当前注册表内容**：M2 的 4 个试点因子（``alpha101`` / ``alpha4`` / ``alpha41`` / ``alpha56``），
-由 ``alpha101v.factors`` 在导入时自动登记，状态一律 ``partial``（``verified`` 需六条门槛，见设计文档 §6.8）。
-全量 101 个是 M3 的工作。
+**当前注册表内容**：101 个因子已全部注册（82 个 verified / 19 个 partial，见 docs/verification.md）。
 """
 
 from __future__ import annotations
@@ -97,17 +95,10 @@ def register(
     return meta
 
 
-def run_factor(
-    name: str,
-    panel: Mapping[str, pd.DataFrame],
-    *,
-    copy_inputs: bool = True,
+def _invoke(
+    name: str, panel: Mapping[str, pd.DataFrame], *, copy_inputs: bool = True
 ) -> pd.DataFrame:
-    """按 :data:`REGISTRY` 取因子，并从面板按形参名自动装配后调用（§7.5）。
-
-    ``copy_inputs=True``（默认）对每个入参做深拷贝，确保因子的任何原地写入都
-    污染不到调用方面板（设计文档 §6.5「输入不可变性」在因子层的落点）。
-    """
+    """按 :data:`REGISTRY` 取因子，从面板按形参名自动装配后调用（**不做出口卫生**）。"""
     meta = REGISTRY.get(name)
     if meta is None:
         available = ", ".join(sorted(REGISTRY)) or "（空）"
@@ -118,10 +109,46 @@ def run_factor(
         if field not in panel:
             raise KeyError(f"因子 {name!r} 需要面板字段 {field!r}，但面板只有 {sorted(panel)}")
         value = panel[field]
-        kwargs[field] = value.copy(deep=True) if copy_inputs and isinstance(value, pd.DataFrame) else value
+        kwargs[field] = (
+            value.copy(deep=True) if copy_inputs and isinstance(value, pd.DataFrame) else value
+        )
+    return meta.func(**kwargs)
 
-    return _sanitize(meta.func(**kwargs))
 
+def run_factor(
+    name: str,
+    panel: Mapping[str, pd.DataFrame],
+    *,
+    copy_inputs: bool = True,
+) -> pd.DataFrame:
+    """按 :data:`REGISTRY` 取因子并计算，**出口卫生保证永不输出 ±inf**（±inf ⇒ NaN）。
+
+    ``copy_inputs=True``（默认）对每个入参做深拷贝，确保因子的任何原地写入都
+    污染不到调用方面板（设计文档 §6.5「输入不可变性」在因子层的落点）。
+    """
+    return _sanitize(_invoke(name, panel, copy_inputs=copy_inputs))
+
+
+def run_factor_raw(
+    name: str, panel: Mapping[str, pd.DataFrame], *, copy_inputs: bool = True
+) -> pd.DataFrame:
+    """与 :func:`run_factor` 相同，但**不做出口卫生**（可能含 ±inf）。
+
+    给需要看「原始爆炸值」的研究者用 —— 不必去碰内部的 ``meta.func``（B3）。
+    ⚠️ 契约差异是**有意**的：``run_factor`` 保证「永不输出 ±inf」，本函数不保证；
+    对拍 / 发布 / golden 一律用前者。
+    """
+    return _invoke(name, panel, copy_inputs=copy_inputs)
+
+
+def run_factor_raw(name: str, panels: dict[str, pd.DataFrame], *, copy_inputs: bool = True) -> pd.DataFrame:
+    """与 :func:`run_factor` 相同，但**不做出口卫生**（可能含 ±inf）。
+
+    给需要看「原始爆炸值」的研究者用 —— 这样不必去碰内部的 ``meta.func``。
+    ⚠️ 契约差异是**有意**的：``run_factor`` 保证「永不输出 ±inf」，本函数不保证；
+    两者不要混用（对拍/发布用前者）。
+    """
+    return _invoke(name, panels, copy_inputs=copy_inputs)
 
 def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
     """输出卫生：±inf 一律降级为 NaN（本库契约：**永不输出 ±inf**）。

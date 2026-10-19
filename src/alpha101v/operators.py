@@ -373,7 +373,7 @@ def delay(df: pd.DataFrame, period: int | float = 1) -> pd.DataFrame:
     return df.shift(period)
 
 
-def decay_linear(
+def _decay_linear_core(
     df: pd.DataFrame, period: int | float, *, order: str = "recent_first", dense: bool = False
 ) -> pd.DataFrame:
     """线性衰减加权平均，权重归一（和为 1）。
@@ -410,6 +410,27 @@ def decay_linear(
         lambda w: float(np.dot(w, weights)), raw=True
     )
 
+
+
+def decay_linear(
+    df: pd.DataFrame, period: int | float, *, order: str = "recent_first", dense: bool = False
+) -> pd.DataFrame:
+    """:func:`_decay_linear_core` 的公开包装：**稀疏模式下补一道「零观测掩码」**。
+
+    为什么需要：稀疏语义（官方默认）把窗口内的 NaN 当 0 计入，但**「窗口里一个有效值都没有」**
+    时它是「没数据」而不是「数据为 0」⇒ 必须给 NaN。原实现直接 fillna(0) 后 rolling，
+    ``min_periods`` 被满足 ⇒ 输出 0.0 ✗（伪造观测：新股上市前的全 NaN 列会在截面 rank 里拿到名次，
+    挤动全市场排名，实测污染 16/101 个因子）。
+
+    修法只堵「零观测」这一种情况：``valid_count == 0`` 的位置置 NaN；
+    其余窗口仍是官方 sparse 语义（NaN 计 0、分母为完整权重和）⇒ golden / 差分口径不变。
+    """
+    out = _decay_linear_core(df, period, order=order, dense=dense)
+    if not dense:
+        frame, window = _prep_win(df, period)
+        valid_count = frame.notna().rolling(window=window, min_periods=window).sum()
+        out = out.mask(valid_count == 0)
+    return out
 
 def _argmax_1based(window_values: np.ndarray) -> float:
     """窗口内最大值的位置，**自窗口起点 1-based**（最新值为 window）。并列取最早出现。"""

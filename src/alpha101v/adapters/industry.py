@@ -26,13 +26,26 @@ import pandas as pd
 
 __all__ = ["coverage_of", "load_sw_industry", "load_sw_industry_names"]
 
-DEFAULT_MEMBERS = "/home/yinxiuqu/quantming/data/sw_industry/members.parquet"
-DEFAULT_CLASSIFY = "/home/yinxiuqu/quantming/data/sw_industry/classify.parquet"
+DEFAULT_MEMBERS: str | None = None     # 不设默认绝对路径（别人机器上必崩）；用参数或环境变量
+DEFAULT_CLASSIFY: str | None = None    # 同上：由调用方显式传入，或设置 ALPHA101V_SW_CLASSIFY
 
 
-def load_sw_industry_names(classify_path: str | Path = DEFAULT_CLASSIFY) -> dict[str, str]:
+def _require_path(value: str | Path | None, env: str, what: str) -> Path:
+    """把「没给路径」变成明确错误，而不是在别人机器上抛出难以理解的 FileNotFoundError。"""
+    import os
+
+    resolved = value or os.environ.get(env)
+    if not resolved:
+        raise FileNotFoundError(
+            f"{what} 未指定：请显式传参，或设置环境变量 {env}。"
+            "（本库不再内置作者本机路径 —— 那种默认值只在作者机器上「恰好能用」）"
+        )
+    return Path(resolved)
+
+
+def load_sw_industry_names(classify_path: str | Path | None = DEFAULT_CLASSIFY) -> dict[str, str]:
     """``index_code → industry_name``（中文名，便于人工核对与文档展示）。"""
-    classify = pd.read_parquet(classify_path)
+    classify = pd.read_parquet(_require_path(classify_path, "ALPHA101V_SW_CLASSIFY", "申万分类文件"))
     required = {"index_code", "industry_name"}
     missing = required - set(classify.columns)
     if missing:

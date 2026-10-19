@@ -51,7 +51,7 @@ volume = pd.DataFrame(np.exp(rng.normal(np.log(2e5), 0.6, (120, 8))), index=inde
 amount = volume * close
 panel = {
     "close": close, "Open": open_, "high": high, "low": low, "volume": volume,
-    "amount": amount, "vwap": amount / volume,
+    "amount": amount, "vwap": amount / (volume * 100),  # volume 单位是「手」
     "returns": close.pct_change(fill_method=None),           # 注意 fill_method=None
     "cap": pd.DataFrame(abs(rng.normal(1e6, 2e5, (120, 8))) + 1, index=index, columns=columns),
     "ind_sector": pd.Series(["A", "A", "A", "A", "B", "B", "B", "B"], index=columns),
@@ -87,7 +87,7 @@ print(f"跑通 {ok}/101")
 |---|---|---:|---|
 | `close` | 收盘价（**必须复权**） | 62 | 1、2、5、7、9、10、11、12、13、17、18、19、20、21、22、24、25、28、29、30、31、32、33、34、35、36、37、38、39、42、43、45、46、47、48、49、51、53、54、55、57、60、63、68、69、70、71、74、79、83、84、85、86、87、88、90、91、92、93、96、100、101 |
 | `amount` | 成交额（元）——**论文的 `adv{d}` 是美元成交额**，用 volume 替代属近似 | 45 | 7、17、21、25、28、31、36、39、43、47、61、62、63、64、65、67、68、69、70、71、72、74、75、76、77、78、79、80、81、85、86、87、88、89、90、91、92、93、94、95、96、97、98、99、100 |
-| `vwap` | 成交均价（论文 vwap；无 vwap 时可用 `amount/volume` 近似） | 43 | 5、11、25、27、32、36、41、42、47、50、57、58、59、61、62、63、64、65、66、67、69、70、71、72、73、74、75、76、77、78、79、81、83、84、86、87、89、91、93、94、96、97、98 |
+| `vwap` | 成交均价（论文 vwap；无 vwap 时用 `amount/(volume*100)` 近似 —— volume 是**手**，漏 ×100 会整体系数错 100 倍且不报错） | 43 | 5、11、25、27、32、36、41、42、47、50、57、58、59、61、62、63、64、65、66、67、69、70、71、72、73、74、75、76、77、78、79、81、83、84、86、87、89、91、93、94、96、97、98 |
 | `volume` | 成交量（**手**；1 手 = 100 股 —— 与 `panel.py` 的口径一致，换算成股数要 ×100） | 42 | 2、3、6、7、11、12、13、14、15、16、17、21、22、26、27、30、35、36、39、40、43、44、45、47、50、52、55、58、59、60、72、74、75、78、81、82、83、85、91、96、99、100 |
 | `high` | 最高价（**必须复权**） | 34 | 15、16、20、22、23、25、26、28、35、40、41、44、47、53、54、55、60、62、64、66、67、68、72、74、77、80、83、85、88、92、95、99、100、101 |
 | `low` | 最低价（**必须复权**） | 33 | 4、20、28、31、35、41、52、53、54、55、60、62、64、66、68、71、72、73、75、76、77、78、83、85、88、89、90、92、95、97、99、100、101 |
@@ -173,7 +173,7 @@ panel["ind_sector"] = load_sw_industry(index, columns, level="L1")    # 申万 L
 
 | 数据源 | 原始列 | 本项目字段 | ⚠️ 单位/口径注意 |
 |---|---|---|---|
-| tushare `daily` | `trade_date, ts_code, open, high, low, close, vol, amount` | `date, code, Open, high, low, close, volume, amount` | `vol` 单位是**手**（1 手=100 股）⇒ `volume = vol * 100`；`amount` 单位是**千元** ⇒ `amount = amount * 1000` |
+| tushare `daily` | `trade_date, ts_code, open, high, low, close, vol, amount` | `date, code, Open, high, low, close, volume, amount` | `vol` 单位是**手**（1 手=100 股）⇒ **`volume = vol`**（本库 `volume` 就是「手」，**不要再 ×100**）；`amount` 单位是**千元** ⇒ `amount = amount * 1000` |
 | akshare `stock_zh_a_hist` | `日期, 开盘, 最高, 最低, 收盘, 成交量, 成交额` | 同上 | 成交量单位**手**；成交额单位**元** |
 | 聚宽 `get_price` | 宽表（列是多级索引） | 改名即可 | **已经是复权价**（取决于 `fq` 参数）⇒ 务必记下用的是哪种复权 |
 | 本仓库的 MongoDB 适配器 | `stock_day` 的 `vol`（手）/ `amount`（元） | `volume`, `amount` | 适配器内部已做 ×100 换算（见 `src/alpha101v/adapters/mongo.py`） |
@@ -231,6 +231,12 @@ sparse 会把这些 NaN 当 0 算进加权平均，产出一个**「看起来正
 
 同一个道理适用于所有「窗口内缺数据怎么处理」的分歧：**先问它是研究口径还是平台口径**，
 再决定传哪个参数（不要改源码默认值，见 §5）。
+
+> ⚠️ **已知限制（审计 B4）**：22 个因子内部直接调用 `decay_linear` 的默认（sparse）口径，
+> `run_factor` 目前**没有**透传 `dense=True` 的入口。要在研究里用严格口径，两条路：
+> ① 直接用 `alpha101v.operators.decay_linear(..., dense=True)` 自行组合因子；
+> ② 替换符号 `alpha101v.factors.decay_linear = lambda d, p, **k: operators.decay_linear(d, p, dense=True, **k)`
+> （注意：必须是 **`factors.` 前缀**，改 `operators.` 对已导入的因子无效）。
 
 ## 5. 口径：默认值不是随便定的（读这一节省你三天）
 
