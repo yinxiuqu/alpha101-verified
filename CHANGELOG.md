@@ -2,6 +2,23 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.6] - 2026-10-19
+
+### 🔴 修复：顶层漏导出 `run_factor`（PyPI 安装测试抓到的真 bug）
+
+在**全新 venv** 里从 PyPI 装 0.1.5 后，按文档调用 `alpha101v.run_factor(...)` 报
+`AttributeError: module 'alpha101v' has no attribute 'run_factor'` ——
+前几轮只把 `run_factor_raw` / `research_mode` 追加到顶层，**`run_factor` 本身漏了**
+（它只存在于 `alpha101v.registry`）。此前所有测试都从 `registry` 或 `src` 路径导入，所以没暴露；
+**独立安装测试才抓到**（这正是「安装试用归另一个会话」的价值）。
+
+现在顶层可用：`run_factor` / `run_factor_raw` / `research_mode` 三者都在 `__all__`。
+
+### ✅ 顺带验证：pandas 3.x 兼容性
+
+仓库 CI 只覆盖 pandas 2.1–2.3；本次在全新 venv（**pandas 3.0.6 + numpy 2.4.6 + scipy**）里用源码跑
+全部 101 个因子：**全部通过**（补齐 `ind_*` 字段后无失败）。
+
 ## [0.1.5] - 2026-10-19
 
 修 0.1.4 引入的问题 + 补齐 B4 + 接入 lint 关卡 + **更正 0.1.4 的性能声明**。
