@@ -232,11 +232,25 @@ sparse 会把这些 NaN 当 0 算进加权平均，产出一个**「看起来正
 同一个道理适用于所有「窗口内缺数据怎么处理」的分歧：**先问它是研究口径还是平台口径**，
 再决定传哪个参数（不要改源码默认值，见 §5）。
 
-> ⚠️ **已知限制（审计 B4）**：22 个因子内部直接调用 `decay_linear` 的默认（sparse）口径，
-> `run_factor` 目前**没有**透传 `dense=True` 的入口。要在研究里用严格口径，两条路：
-> ① 直接用 `alpha101v.operators.decay_linear(..., dense=True)` 自行组合因子；
-> ② 替换符号 `alpha101v.factors.decay_linear = lambda d, p, **k: operators.decay_linear(d, p, dense=True, **k)`
-> （注意：必须是 **`factors.` 前缀**，改 `operators.` 对已导入的因子无效）。
+
+
+> ✅ **研究口径现在有正式入口了（B4 已解决，方案 A）**：`factors.py` 里有 62 处 `decay_linear(...)`
+> 调用都不传 `dense`（忠实官方 sparse 默认），而 `run_factor` 没有口径参数。现在用一个**上下文开关**：
+>
+> ```python
+> import alpha101v
+> from alpha101v import run_factor
+>
+> with alpha101v.research_mode():          # 块内：未显式传 dense 的 decay_linear 改用严格口径
+>     factor = run_factor("alpha31", panel)   # 窗口必须完整，缺数据 ⇒ NaN（不再把 NaN 当 0）
+> ```
+>
+> * **默认行为完全不变**（不进上下文 ⇒ 与官方 sparse 一致 ⇒ golden / 差分 / 平台对拍口径不动）；
+> * **线程/任务安全**（`ContextVar`，不是模块级全局变量）；
+> * **显式传参优先**：`decay_linear(..., dense=False)` 在上下文里也不受影响。
+>
+> （旧绕法 — monkeypatch `alpha101v.factors.decay_linear`，且必须打 `factors.` 前缀 — 已不再需要，
+> 保留说明只为解释历史：`factors.py` 是 `from .operators import decay_linear`，改 `operators.` 对已导入的名字无效。）
 
 ## 5. 口径：默认值不是随便定的（读这一节省你三天）
 

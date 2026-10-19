@@ -31,6 +31,9 @@ order ``decay_linear`` 权重方向默认「最新最大」，``order="oldest_fi
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+
 from typing import Literal
 
 import numpy as np
@@ -414,8 +417,43 @@ def _decay_linear_core(
     return result.mask(observed)
 
 
+
+#: 研究口径开关（B4）：``None`` ⇒ 保持官方默认（稀疏）；被 :func:`research_mode` 设为 ``True`` 时，
+#: **未显式传 `dense`** 的 ``decay_linear`` 调用改用严格口径。默认值恒为 ``None`` ⇒ 行为与 0.1.4 完全一致。
+_DECAY_DENSE: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
+    "alpha101v_decay_dense", default=None
+)
+
+
+@contextlib.contextmanager
+def research_mode(*, decay_dense: bool = True):
+    """研究口径上下文：块内**未显式传** `dense` 的 ``decay_linear`` 使用 ``dense=decay_dense``。
+
+    为什么需要它（审计 B4）：``factors.py`` 里有 62 处 ``decay_linear(...)`` 调用**都没传** ``dense``
+    （忠实官方 sparse 默认），而 ``run_factor`` 没有口径参数 ⇒ 想用严格口径只能 monkeypatch
+    ``alpha101v.factors.decay_linear``（且必须是 ``factors.`` 前缀，改 ``operators.`` 无效）。
+
+    用法::
+
+        with alpha101v.research_mode():          # 研究口径：窗口必须完整，缺数据 ⇒ NaN
+            run_factor("alpha31", panel)
+
+    * **默认行为不变**：不进这个上下文 ⇒ 与 0.1.4 完全一致（golden / 差分 / 平台对拍口径不动）；
+    * **线程/任务安全**：用 ``ContextVar`` 而不是模块级全局变量；
+    * 显式传 ``dense=True/False`` 的调用**不受影响**（显式优先）。
+    """
+    token = _DECAY_DENSE.set(bool(decay_dense))
+    try:
+        yield
+    finally:
+        _DECAY_DENSE.reset(token)
+
 def decay_linear(
-    df: pd.DataFrame, period: int | float, *, order: str = "recent_first", dense: bool = False
+    df: pd.DataFrame,
+    period: int | float,
+    *,
+    order: str = "recent_first",
+    dense: bool | None = None,
 ) -> pd.DataFrame:
     """:func:`_decay_linear_core` 的公开包装：**稀疏模式下补一道「零观测掩码」**。
 
@@ -427,6 +465,9 @@ def decay_linear(
     修法只堵「零观测」这一种情况：``valid_count == 0`` 的位置置 NaN；
     其余窗口仍是官方 sparse 语义（NaN 计 0、分母为完整权重和）⇒ golden / 差分口径不变。
     """
+    if dense is None:                        # 未显式指定 ⇒ 查研究口径上下文（默认仍为 False）
+        context_value = _DECAY_DENSE.get()
+        dense = False if context_value is None else bool(context_value)
     out = _decay_linear_core(df, period, order=order, dense=dense)
     if not dense:
         frame, window = _prep_win(df, period)

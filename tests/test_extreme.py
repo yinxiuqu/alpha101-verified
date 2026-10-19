@@ -121,3 +121,29 @@ def test_no_duplicate_top_level_definitions():
                     problems.append(f"{path.name}:{node.lineno} 重复定义 {node.name}（首次 {seen[node.name]}）")
                 seen[node.name] = node.lineno
     assert not problems, "发现重复定义：" + "; ".join(problems)
+
+
+def test_research_mode_switch_for_decay_dense():
+    """B4 方案 A：默认不变；进入 research_mode() 后未显式传 dense 的调用改用严格口径；退出即恢复。"""
+    import alpha101v
+    from alpha101v import operators as op
+
+    frame = pd.DataFrame(
+        {"A": [np.nan, 1.0, np.nan, 3.0, 4.0, 5.0]},
+        index=pd.date_range("2024-01-02", periods=6),
+    )
+    # 默认（官方 sparse）：缺口按 0 计入 ⇒ 有值
+    default = op.decay_linear(frame, 3)
+    assert default["A"].notna().any()
+
+    with alpha101v.research_mode():
+        strict = op.decay_linear(frame, 3)
+        # 严格口径：窗口内任一 NaN ⇒ NaN ⇒ 含缺口的窗口全为 NaN
+        assert strict["A"].isna().sum() > default["A"].isna().sum()
+        # 显式传参优先：不受上下文影响
+        explicit = op.decay_linear(frame, 3, dense=False)
+        pd.testing.assert_frame_equal(explicit, default)
+
+    # 退出后恢复默认
+    after = op.decay_linear(frame, 3)
+    pd.testing.assert_frame_equal(after, default)

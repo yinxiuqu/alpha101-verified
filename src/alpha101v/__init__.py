@@ -132,3 +132,9 @@ from .registry import run_factor_raw  # noqa: E402  （放在文件末尾：避�
 
 if "run_factor_raw" not in __all__:  # pragma: no cover - 幂等
     __all__.append("run_factor_raw")
+
+# B4/A：研究口径上下文（默认行为不变）
+from .operators import research_mode  # noqa: E402
+
+if "research_mode" not in __all__:  # pragma: no cover - 幂等
+    __all__.append("research_mode")
