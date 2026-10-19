@@ -458,6 +458,28 @@ def _shift_arg_basis(pos: pd.DataFrame, window: int | float, basis: str) -> pd.D
     raise ValueError(f"basis 只接受 {ALLOWED_ARG_BASIS}，收到 {basis!r}")
 
 
+
+def _arg_position_matrix(frame: pd.DataFrame, window: int, *, which: str) -> pd.DataFrame:
+    """``ts_argmax``/``ts_argmin`` 的向量化内核：返回 **1-based、自窗口起点** 的位置。
+
+    做法：先取 ``rolling.max/min``（向量化），再自新到老扫一遍、**命中即覆盖** ——
+    这样「最老的那个命中者」胜出，与 ``np.argmax``/``np.argmin`` 的**并列取最早**一致。
+    ``min_periods=window`` ⇒ 窗口内含 NaN 时极值为 NaN ⇒ 全部不命中 ⇒ 结果 NaN
+    （与原 ``rolling.apply`` 的 NaN 语义相同）。
+    """
+    reduced = (
+        frame.rolling(window=window, min_periods=window).max()
+        if which == "max"
+        else frame.rolling(window=window, min_periods=window).min()
+    )
+    target = reduced.to_numpy(dtype=float)
+    position = np.full(target.shape, np.nan, dtype=float)
+    for age in range(window):                     # age 0 = 最新；越往后越老 ⇒ 覆盖后留下最老的
+        value = frame.shift(age).to_numpy(dtype=float)
+        hit = np.isfinite(target) & (value == target) & np.isfinite(value)
+        position = np.where(hit, float(window - age), position)   # 1-based 自窗口起点
+    return pd.DataFrame(position, index=frame.index, columns=frame.columns)
+
 def ts_argmax(df: pd.DataFrame, window: int | float, basis: str = "days_ago") -> pd.DataFrame:
     """最大值在最近 ``window`` 期中的位置。
 
@@ -473,14 +495,14 @@ def ts_argmax(df: pd.DataFrame, window: int | float, basis: str = "days_ago") ->
     并列时取**最早出现**（与 ``np.argmax`` 一致；BRAIN 未规定）。
     """
     df, window = _prep_win(df, window)
-    pos = df.rolling(window=window, min_periods=window).apply(_argmax_1based, raw=True)
+    pos = _arg_position_matrix(df, window, which="max")
     return _shift_arg_basis(pos, window, basis)
 
 
 def ts_argmin(df: pd.DataFrame, window: int | float, basis: str = "days_ago") -> pd.DataFrame:
     """最小值在最近 ``window`` 期中的位置（``basis`` 语义同 :func:`ts_argmax`，BRAIN 同样「今天=0」）。"""
     df, window = _prep_win(df, window)
-    pos = df.rolling(window=window, min_periods=window).apply(_argmin_1based, raw=True)
+    pos = _arg_position_matrix(df, window, which="min")
     return _shift_arg_basis(pos, window, basis)
 
 
