@@ -134,21 +134,11 @@ def run_factor_raw(
 ) -> pd.DataFrame:
     """与 :func:`run_factor` 相同，但**不做出口卫生**（可能含 ±inf）。
 
-    给需要看「原始爆炸值」的研究者用 —— 不必去碰内部的 ``meta.func``（B3）。
-    ⚠️ 契约差异是**有意**的：``run_factor`` 保证「永不输出 ±inf」，本函数不保证；
-    对拍 / 发布 / golden 一律用前者。
-    """
-    return _invoke(name, panel, copy_inputs=copy_inputs)
-
-
-def run_factor_raw(name: str, panels: dict[str, pd.DataFrame], *, copy_inputs: bool = True) -> pd.DataFrame:
-    """与 :func:`run_factor` 相同，但**不做出口卫生**（可能含 ±inf）。
-
     给需要看「原始爆炸值」的研究者用 —— 这样不必去碰内部的 ``meta.func``。
     ⚠️ 契约差异是**有意**的：``run_factor`` 保证「永不输出 ±inf」，本函数不保证；
     两者不要混用（对拍/发布用前者）。
     """
-    return _invoke(name, panels, copy_inputs=copy_inputs)
+    return _invoke(name, panel, copy_inputs=copy_inputs)
 
 def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
     """输出卫生：±inf 一律降级为 NaN（本库契约：**永不输出 ±inf**）。

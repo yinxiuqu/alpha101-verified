@@ -126,3 +126,9 @@ __all__ = [
     "ts_rank",
     "ts_sum",
 ]
+
+# B3/N2：给研究者的「原始出口」必须**可发现**（否则用户仍会去碰 meta.func）
+from .registry import run_factor_raw  # noqa: E402  （放在文件末尾：避免与上方 __all__ 定义顺序纠缠）
+
+if "run_factor_raw" not in __all__:  # pragma: no cover - 幂等
+    __all__.append("run_factor_raw")

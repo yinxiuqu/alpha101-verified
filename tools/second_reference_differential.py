@@ -193,22 +193,6 @@ def apply_second_reference_alignments(panel: dict[str, pd.DataFrame]) -> dict[st
     return aligned
 
 
-def rounding_conflict(name: str) -> bool:
-    """该因子的公式里是否含**论文的小数窗口常数**且 round≠floor。
-
-    ⚠️ 不能用「docstring 里出现任何小数」来判断：那样会把 `1.5`（系数）、`.001`（防零项）
-    之类误判成窗口（实测 alpha100 就被误归因过）。这里只认论文 §3 列出的调优常数，
-    并要求 round 与 floor 确实不同 —— 不同才有差异，相同就没有。
-    """
-    func = registry.REGISTRY[name].func
-    expression = (func.__doc__ or "") + " " + (getattr(func, "__name__", "") or "")
-    numbers = [float(x) for x in re.findall(r"\d+\.\d+", expression)]
-    return any(
-        abs(n - conflict) <= 1e-6
-        for n in numbers
-        for conflict in ROUNDING_CONFLICTS
-    )
-
 
 def compare(panel: dict[str, pd.DataFrame], reference: pd.DataFrame, count: int) -> list[dict]:
     """逐点比较：返回每个因子的判定与差异统计。"""

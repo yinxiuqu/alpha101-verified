@@ -94,3 +94,30 @@ def test_decay_linear_zero_observation_is_nan_not_zero():
     assert not sparse["live"].iloc[2:].isna().any(), "有观测的列从第 3 行起不受影响（前两行是预热期）"
     # 非零观测窗口仍按官方 sparse（NaN 计 0、分母为完整权重和）
     assert np.isfinite(sparse["live"].iloc[-1])
+
+
+def test_run_factor_raw_is_discoverable():
+    """N2：B3 的正式入口必须**可发现** —— 出现在 __all__ 与顶层命名空间（而不只是 registry 模块）。"""
+    import alpha101v
+
+    assert hasattr(alpha101v, "run_factor_raw"), "顶层应导出 run_factor_raw"
+    assert "run_factor_raw" in alpha101v.__all__
+    assert callable(alpha101v.run_factor_raw)
+
+
+def test_no_duplicate_top_level_definitions():
+    """N1：禁止同一模块里重复定义同名函数（曾因补丁重复粘贴，run_factor_raw 被定义两次）。"""
+    import ast
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "alpha101v"
+    problems = []
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        seen = {}
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node.name in seen:
+                    problems.append(f"{path.name}:{node.lineno} 重复定义 {node.name}（首次 {seen[node.name]}）")
+                seen[node.name] = node.lineno
+    assert not problems, "发现重复定义：" + "; ".join(problems)

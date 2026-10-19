@@ -44,3 +44,11 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# 只选「能抓真 bug」的规则：重复定义、未定义名、未使用变量、裸 except 等（不做风格检查）
+select = ["E9", "F63", "F7", "F82", "F811", "F821"]
