@@ -2,7 +2,7 @@
 
 数据源（设计文档 §10.2 指定）
 ----------------------------
-``/home/yinxiuqu/quantming/data/sw_industry/members.parquet``（覆盖约 98.4%）::
+``<你的 SW 数据目录>/members.parquet``（示例路径；本库不再内置作者本机路径，覆盖约 98.4%）::
 
     index_code  level  src     con_code  in_date     out_date  is_new  iface
     801010.SI   L1     SW2021  000019    2021-12-13  NaT       Y       index_member
@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -26,8 +27,17 @@ import pandas as pd
 
 __all__ = ["coverage_of", "load_sw_industry", "load_sw_industry_names"]
 
-DEFAULT_MEMBERS: str | None = None     # 不设默认绝对路径（别人机器上必崩）；用参数或环境变量
-DEFAULT_CLASSIFY: str | None = None    # 同上：由调用方显式传入，或设置 ALPHA101V_SW_CLASSIFY
+_LEGACY_SW_DIR = "/home/yinxiuqu/quantming/data/sw_industry"   # 作者本机数据（仅当其存在时才作为默认值）
+
+
+def _legacy(name: str) -> str | None:
+    """本机存在才返回默认路径；不存在则 None（让别人机器走「显式传参/环境变量」并得到明确错误）。"""
+    path = os.path.join(_LEGACY_SW_DIR, name)
+    return path if os.path.exists(path) else None
+
+
+DEFAULT_MEMBERS: str | None = _legacy("members.parquet")
+DEFAULT_CLASSIFY: str | None = _legacy("classify.parquet")
 
 
 def _require_path(value: str | Path | None, env: str, what: str) -> Path:

@@ -2,6 +2,53 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.3] - 2026-10-19
+
+外部审计（9 条，均带可复现证据）修复版。**0.1.2 存在 P0-1 缺陷，请升级到 0.1.3。**
+
+### 🔴 P0-1 `decay_linear` 零观测伪造 0.0（静默错误）
+
+稀疏模式（官方默认）在 `fillna(0.0)` 之后 rolling，导致「窗口内一个有效值都没有」时 `min_periods` 仍被满足，
+输出 **0.0** 而不是 NaN —— 新股「上市前全 NaN」的列因此会在截面 rank 里拿到名次、挤动全市场排名
+（审计实测：180×30 面板新增一只全 NaN 股票，16/101 个因子被改变；切 dense 后只剩 2 个、差异 5.6e-17）。
+
+修法**只堵「零观测」**（保留官方 sparse 语义，故 golden 口径不变）：公开 `decay_linear` 外包一层，
+`valid_count == 0` 位置置 NaN；内核保留为 `_decay_linear_core`。
+⇒ golden 基线已重新生成（该位置 0.0 → NaN 属预期行为修正）。
+
+### 🔴 P0-2 `volume` 单位文档自相矛盾（照文档做静默差 100 倍）
+
+`panel.py` 口径：`volume` 单位为**手**、`vwap = amount/(volume*100)`；而 `usage.md` 写 `volume = vol*100`（变股）
+且 `vwap = amount/volume`（漏 ×100）。已按 `panel.py`（真实数据裁决：`amount×10/vol` 落在 [low,high] 100%）统一：
+**`volume = vol`（手，不再 ×100）**、**`vwap = amount/(volume*100)`**，字段表由生成器产出并附警告。
+
+### 🟠 P1
+
+* **B3** 新增公开 `run_factor_raw`（不做出出口卫生，可能含 ±inf）；`run_factor`/`raw` 共用内部 `_invoke`。
+* **B4** `usage.md` §4.5 如实写明限制：22 个因子内部写死 sparse，`run_factor` 无 `dense` 透传；
+  给出两条绕法（直接用 `operators.decay_linear(dense=True)`；替换 `factors.` 前缀符号，改 `operators.` 无效）。
+* **B5** `adapters/industry.py` 不再硬编码作者本机绝对路径：**存在才作为默认值**，否则要求显式传参或
+  `ALPHA101V_SW_CLASSIFY` / `ALPHA101V_SW_MEMBERS`，缺失时抛明确错误。
+
+### 🟡 P2 文档
+
+* **B6** `registry.py` 头部过期说明（「M2 试点 / M3 工作」）→ 101 个全部注册（82 verified / 19 partial）。
+* **B7** `usage.md` 耗时「≈8 分钟、ts_rank 是瓶颈」→ 实测 **≈37 秒**，**decay_linear 才是最大瓶颈**（4 个 apply 算子约 59%）。
+* **B8** `count_extremes` 的 `huge` 默认改为**尺度感知**（`None` ⇒ 面板 4σ），不再用与量纲脱节的 `1e12`。
+
+### 🟢 审计其余结论
+
+* B9（4 个 apply 算子占 58.9%、端到端向量化上限约 2.4×）已记录为后续优化预期基线；
+* 审计方核查「非 bug」清单（时间截断不变性 101/101、rank/ts_argmax/ind_neutralize/scale 的 NaN 处理、
+  0/0 自然 NaN、`_sanitize` 不漏 inf、101/101 齐备）与本仓库自身测试一致。
+
+### 本轮自查（发版前）
+
+* **全量套件 714 项通过**（0 失败 / 0 错误）；
+* **通用探针**：所有窗口算子在「全 NaN 输入」下**无伪造值**；**101 因子在「整列全 NaN 的股票」上
+  无异常、无伪造值**；
+* 静态扫描：`min_periods` 误配 0 处、`except: pass` 0 处、TODO 0 处、`src/` 下无本机绝对路径。
+
 ## [0.1.2] - 2026-10-18
 
 ### 修复（正确性）
