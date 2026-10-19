@@ -76,8 +76,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         id="m3_decay_linear_reversed_weights",
         source=OPERATORS,
-        anchor="    weights = np.arange(1, period + 1, dtype=float)",
-        replacement="    weights = np.arange(period, 0, -1, dtype=float)",
+        anchor="        coefficients = np.array([window - k for k in range(window)], dtype=float)",
+        replacement="        coefficients = np.array([k + 1 for k in range(window)], dtype=float)",
         targets=(TEST_OPERATORS,),
         catcher="test_a17_decay_linear_weights",
         rationale="§8.4 行 3：decay_linear 权重反序（最新值权重反而最小）",
@@ -85,8 +85,8 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         id="m4_ts_argmax_missing_plus_one",
         source=OPERATORS,
-        anchor="    return float(np.argmax(window_values) + 1)",
-        replacement="    return float(np.argmax(window_values))",
+        anchor="        position = np.where(hit, float(window - age), position)   # 1-based 自窗口起点",
+        replacement="        position = np.where(hit, float(window - age - 1), position)   # 变异：少 +1（错位 1）",
         targets=(TEST_OPERATORS,),
         catcher="test_a12_ts_argmax_default_basis_is_days_ago",
         rationale="§8.4 行 4：ts_argmax 去掉 +1 ⇒ 两个基准（自起点 1-based / BRAIN 距今 0 基）整体错位 1",
