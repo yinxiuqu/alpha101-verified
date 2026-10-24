@@ -154,7 +154,7 @@ def main() -> int:
     print(f"  （本次跑 {len(selected)} 个因子：{args.factors}）")
     factor_series: dict[str, pd.DataFrame] = {}
     for name in selected:
-        out = registry.run_factor(name, panels)
+        out = registry.run_factor(name, panels, dtype=np.float64)
         factor_series[name] = out
         values = out.to_numpy(dtype=float)
         finite = np.isfinite(values)

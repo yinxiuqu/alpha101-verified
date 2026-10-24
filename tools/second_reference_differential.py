@@ -208,7 +208,7 @@ def compare(panel: dict[str, pd.DataFrame], reference: pd.DataFrame, count: int)
         if number > count:
             continue
         try:
-            mine_values = registry.run_factor(name, panel)              # 面板已在 main() 里对齐口径
+            mine_values = registry.run_factor(name, panel, dtype=np.float64)  # 验证口径用 float64
         except Exception as exc:  # noqa: BLE001
             outcomes.append({"factor": name, "verdict": f"本库执行失败：{str(exc)[:60]}", "cells": 0, "mismatch": 0, "max_abs_diff": np.nan})
             continue

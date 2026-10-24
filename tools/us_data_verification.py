@@ -304,7 +304,7 @@ def verify() -> int:
     for name in ALL_FACTOR_NAMES:
         if not set(registry.REGISTRY[name].params) <= set(panel):
             continue
-        out = registry.run_factor(name, panel)
+        out = registry.run_factor(name, panel, dtype=np.float64)
         values = out.to_numpy(dtype=float)
         runs += 1
         infs += int(np.isinf(values).sum())
@@ -316,8 +316,8 @@ def verify() -> int:
     names = [n for n in ALL_FACTOR_NAMES if set(registry.REGISTRY[n].params) <= set(panel)][:12]
     bad = []
     for name in names:
-        full = registry.run_factor(name, panel)
-        trunc = registry.run_factor(name, {k: (v.iloc[:cut] if hasattr(v, "iloc") else v) for k, v in panel.items()})
+        full = registry.run_factor(name, panel, dtype=np.float64)
+        trunc = registry.run_factor(name, {k: (v.iloc[:cut] if hasattr(v, "iloc") else v) for k, v in panel.items()}, dtype=np.float64)
         try:
             pd.testing.assert_frame_equal(trunc, full.iloc[:cut])
         except AssertionError:

@@ -429,7 +429,7 @@ def main() -> int:
         if expression is None:
             outcomes.append(Outcome(alpha, "无可比格子", 0.0, 0, 0, 0, "vnpy 未实现（19 个缺口之一）"))
             continue
-        mine = registry.run_factor(name, mine_panel).reindex(index=index, columns=columns)
+        mine = registry.run_factor(name, mine_panel, dtype=np.float64).reindex(index=index, columns=columns)
         left = mine.to_numpy(dtype=float)
 
         # 先按**未修正**的参照记一次（用于证明 quesval2 取反的影响面）

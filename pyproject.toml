@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alpha101v"
-version = "0.1.8"
+version = "0.1.9"
 description = "A verifiable implementation of the 101 Formulaic Alphas — operators with explicit conventions plus a mutation-tested verification suite."
 readme = "README.md"
 requires-python = ">=3.11"

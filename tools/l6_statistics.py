@@ -239,7 +239,7 @@ def main() -> int:
     for position, name in enumerate(names, start=1):
         if position % 10 == 1 or position == len(names):
             print(f"  [{position}/{len(names)}] {name} ...", flush=True)
-        factor = registry.run_factor(name, panel)
+        factor = registry.run_factor(name, panel, dtype=np.float64)
         record: dict[str, object] = {"factor": name}
         for horizon in HORIZONS:
             summary = ic_summary(spearman_ic(factor, forward[horizon]))

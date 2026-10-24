@@ -2,6 +2,14 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.9] - 2026-10-24
+
+### Fixed
+
+- 验证工具（`factor_differential` / `second_reference_differential` / `brain_alignment` /
+  `l6_statistics` / `us_data_verification` / `real_panel_smoke`）显式用 `dtype=np.float64`，
+  避免 float32 出口的 ~3e-8 差异被误判为「待查」；运行时 `run_factor` 仍默认 float32。
+
 ## [0.1.8] - 2026-10-24
 
 ### Fixed

@@ -162,7 +162,7 @@ def local_pnl(factor_name: str, n_codes: int, start: str, end: str) -> tuple[pd.
     from alpha101v import registry  # noqa: PLC0415
 
     panel, codes = l6.load_inputs(n_codes, start, end)
-    factor = registry.run_factor(factor_name, panel)
+    factor = registry.run_factor(factor_name, panel, dtype=np.float64)
     forward = l6.forward_returns(panel["close"], 1)
     pnl = l6.factor_pnl(factor, forward)
     meta = {"codes": len(codes), "days": int(panel["close"].shape[0]), "start": start, "end": end}
