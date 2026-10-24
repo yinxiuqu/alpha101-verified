@@ -63,7 +63,7 @@ def test_register_and_auto_wire_by_parameter_name(clean_registry):
     assert meta.params == ("close", "volume")
 
     panel = _panel()
-    out = registry.run_factor("demo", panel)
+    out = registry.run_factor("demo", panel, dtype=np.float64)
     pd.testing.assert_frame_equal(out, panel["close"] / panel["volume"])
 
 

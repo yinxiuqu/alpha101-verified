@@ -21,6 +21,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from .extreme import FACTOR_DTYPE, cast_factor_dtype
+
 __all__ = [
     "REGISTRY",
     "STATUS_VALUES",
@@ -29,6 +31,7 @@ __all__ = [
     "register",
     "run_factor",
     "status_report",
+    "FACTOR_DTYPE",
 ]
 
 #: 因子可判定状态（设计文档 §6.8）：verified 必须六条门槛全满足。
@@ -120,17 +123,26 @@ def run_factor(
     panel: Mapping[str, pd.DataFrame],
     *,
     copy_inputs: bool = True,
+    dtype: np.dtype | type = FACTOR_DTYPE,
 ) -> pd.DataFrame:
-    """按 :data:`REGISTRY` 取因子并计算，**出口卫生保证永不输出 ±inf**（±inf ⇒ NaN）。
+    """按 :data:`REGISTRY` 取因子并计算，**出口统一 dtype（默认 float32）且永不输出 ±inf**。
+
+    * ①/③：±inf ⇒ NaN（保守）；
+    * ②：目标 dtype 范围内的巨大有限值保留、不裁剪；
+    * float64 有限值超出 float32 上限时 ⇒ NaN，并记录在 ``result.attrs["overflow_to_nan"]``。
 
     ``copy_inputs=True``（默认）对每个入参做深拷贝，确保因子的任何原地写入都
     污染不到调用方面板（设计文档 §6.5「输入不可变性」在因子层的落点）。
     """
-    return _sanitize(_invoke(name, panel, copy_inputs=copy_inputs))
+    return cast_factor_dtype(_sanitize(_invoke(name, panel, copy_inputs=copy_inputs)), dtype=dtype)
 
 
 def run_factor_raw(
-    name: str, panel: Mapping[str, pd.DataFrame], *, copy_inputs: bool = True
+    name: str,
+    panel: Mapping[str, pd.DataFrame],
+    *,
+    copy_inputs: bool = True,
+    dtype: np.dtype | type | None = None,
 ) -> pd.DataFrame:
     """与 :func:`run_factor` 相同，但**不做出口卫生**（可能含 ±inf）。
 
@@ -138,7 +150,8 @@ def run_factor_raw(
     ⚠️ 契约差异是**有意**的：``run_factor`` 保证「永不输出 ±inf」，本函数不保证；
     两者不要混用（对拍/发布用前者）。
     """
-    return _invoke(name, panel, copy_inputs=copy_inputs)
+    result = _invoke(name, panel, copy_inputs=copy_inputs)
+    return result if dtype is None else cast_factor_dtype(result, dtype=dtype)
 
 def _sanitize(result: pd.DataFrame) -> pd.DataFrame:
     """输出卫生：±inf 一律降级为 NaN（本库契约：**永不输出 ±inf**）。

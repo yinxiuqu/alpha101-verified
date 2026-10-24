@@ -19,6 +19,7 @@ from __future__ import annotations
 from . import elemwise, factors, neutralize, operators, panel, registry
 from .elemwise import ELEMWISE, abs_, log, maximum, minimum, sign, signedpower
 from .factors import ALL_FACTOR_NAMES, PILOT_NAMES, alpha4, alpha41, alpha5, alpha56, alpha101
+from .extreme import FACTOR_DTYPE, cast_factor_dtype
 from .neutralize import ind_neutralize, neu_industry, neutral
 from .operators import (
     correlation,
@@ -50,7 +51,7 @@ def _resolve_version() -> str:
 
         return _v("alpha101v")
     except Exception:  # noqa: BLE001 - 未安装/元数据缺失时回退
-        return "0.1.6"
+        return "0.1.7"
 
 
 __version__ = _resolve_version()
@@ -86,6 +87,7 @@ OPERATORS: tuple[str, ...] = (
 __all__ = [
     "ALL_FACTOR_NAMES",
     "ELEMWISE",
+    "FACTOR_DTYPE",
     "OPERATORS",
     "PILOT_NAMES",
     "__version__",
@@ -97,6 +99,7 @@ __all__ = [
     "panel",
     "registry",
     "abs_",
+    "cast_factor_dtype",
     "elemwise",
     "log",
     "maximum",

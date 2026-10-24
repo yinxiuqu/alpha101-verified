@@ -34,7 +34,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-__all__ = ["bound_inf", "count_extremes", "mask_small_denominator"]
+__all__ = ["FACTOR_DTYPE", "bound_inf", "cast_factor_dtype", "count_extremes", "mask_small_denominator"]
 
 
 def count_extremes(frame: pd.DataFrame, *, huge: float | None = None) -> dict[str, int]:
@@ -108,3 +108,36 @@ def bound_inf(frame: pd.DataFrame, *, axis: int = 1) -> pd.DataFrame:
             raise ValueError("axis 只接受 0 或 1")
     replaced = np.where(np.isposinf(values), high, np.where(np.isneginf(values), low, values))
     return pd.DataFrame(replaced, index=out.index, columns=out.columns)
+
+
+# ---------------------------------------------------------------------------
+# 因子出口 dtype 策略（float32 + 三原则）
+# ---------------------------------------------------------------------------
+#: 因子输出统一 dtype。**因子库/研究消费方默认拿到的就是 float32**；
+#: `run_factor_raw` 仍保留 float64/±inf 供诊断，不经过本函数。
+FACTOR_DTYPE = np.dtype(np.float32)
+
+
+def cast_factor_dtype(frame: pd.DataFrame, dtype: np.dtype | type = FACTOR_DTYPE) -> pd.DataFrame:
+    """把因子输出统一转成 ``dtype``（默认 float32），并按三原则处理非有限值。
+
+    * ①/③：输入里的 ±inf 一律 → NaN；
+    * ②：极小分母造成的**巨大有限值**若在目标 dtype 范围内则原样保留（不裁剪）；
+    * ③ 的存储边界：float64 有限值若超出 float32 上限，转换后为 ±inf ⇒ NaN（保守口径），
+      计入 ``attrs["overflow_to_nan"]``，不静默保留 inf。
+
+    返回新 DataFrame；``attrs`` 记录：
+    ``factor_dtype`` / ``inf_to_nan`` / ``overflow_to_nan`` / ``nan_cells``。
+    """
+    values = frame.to_numpy(dtype=np.float64)
+    with np.errstate(over="ignore", invalid="ignore"):
+        cast = values.astype(dtype)
+    n_inf = int(np.isinf(values).sum())
+    n_overflow = int((np.isfinite(values) & np.isinf(cast)).sum())
+    cast = np.where(np.isfinite(cast), cast, np.nan)
+    out = pd.DataFrame(cast, index=frame.index, columns=frame.columns)
+    out.attrs["factor_dtype"] = np.dtype(dtype).name
+    out.attrs["inf_to_nan"] = n_inf
+    out.attrs["overflow_to_nan"] = n_overflow
+    out.attrs["nan_cells"] = int(np.isnan(cast).sum())
+    return out

@@ -2,6 +2,18 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.7] - 2026-10-24
+
+### Changed — 因子出口统一 float32 + 三原则
+
+- `run_factor` 默认返回 **float32**（此前 float64）；新增 `dtype` 参数可显式覆盖。
+- 新增 `FACTOR_DTYPE` / `cast_factor_dtype()`：±inf → NaN（①/③）；float32 范围内的
+  huge finite 保留不裁剪（②）；超出 float32 上限的有限值 → NaN，并在
+  `result.attrs["overflow_to_nan"]` 记录数量。
+- `run_factor_raw` 默认行为不变（float64、可含 ±inf），仅新增可选 `dtype` 参数。
+- golden 快照与 auto-wire 测试显式用 `dtype=np.float64`，继续守算法口径；
+  新增 `tests/test_output_dtype.py` 守 float32 出口。
+
 ## [0.1.6] - 2026-10-19
 
 ### 🔴 修复：顶层漏导出 `run_factor`（PyPI 安装测试抓到的真 bug）

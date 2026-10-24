@@ -37,6 +37,10 @@ vnpy（MIT）仅作测试期参照并署名；运行时依赖只有 `numpy / pan
 
 ---
 
+
+> **0.1.7 起**：`run_factor` 默认返回 **float32**（`dtype` 可覆盖）；±inf → NaN（①/③），
+> float32 范围内的 huge finite 保留不裁剪（②），超出 float32 上限的有限值 → NaN 并记录在
+> `result.attrs["overflow_to_nan"]`。需要 float64/±inf 诊断请用 `run_factor_raw`。
 ## 快速开始
 
 > **第一次用？看 [`docs/usage.md`](docs/usage.md)**（安装 → 五分钟上手 → 字段不够怎么办 → 口径 → 自查 → 性能 → 常见问题），并可直接跑 `python examples/hello_alpha101.py`（合成面板，不需要数据库）。

@@ -102,7 +102,7 @@ def factor_values(panel: dict[str, object]) -> dict[str, np.ndarray]:
 
     values: dict[str, np.ndarray] = {}
     for name in sorted(registry.REGISTRY):
-        out = registry.run_factor(name, panel)
+        out = registry.run_factor(name, panel, dtype=np.float64)
         values[name] = np.ascontiguousarray(out.to_numpy(dtype=np.float64))
     return values
 
