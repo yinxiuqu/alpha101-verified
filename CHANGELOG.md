@@ -2,6 +2,13 @@
 
 本项目遵循「结论可追溯、边界如实标注」的写法：每个版本都写清**改了什么口径、为什么**，以及**哪些仍未被验证**。
 
+## [0.1.8] - 2026-10-24
+
+### Fixed
+
+- `tools/second_reference_differential.py`：缺第二参照 venv 时**先检查环境**再写 runner，
+  给出可执行的 `fetch_second_reference.sh` 提示，而不是抛底层 `FileNotFoundError`（CI 抓到的真问题）。
+
 ## [0.1.7] - 2026-10-24
 
 ### Changed — 因子出口统一 float32 + 三原则

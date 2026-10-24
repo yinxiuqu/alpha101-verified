@@ -126,11 +126,16 @@ def to_reference_long(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 def run_reference(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
     """调用参照（独立 venv 子进程）→ 返回长表（含每个因子一列）。"""
+    # 先检查参照环境：缺 venv 时给出可执行提示，而不是在写 runner 时抛底层 FileNotFoundError
+    python = REFERENCE["venv"] / "bin" / "python"
+    if not python.exists():
+        raise SystemExit(f"参照环境不存在：{python}\n先跑 `bash tools/fetch_second_reference.sh`")
     REFERENCE["workdir"].mkdir(parents=True, exist_ok=True)
     inp = REFERENCE["workdir"] / "panel_in.parquet"
     outp = REFERENCE["workdir"] / "factors_out.parquet"
     table.to_parquet(inp, index=False)
     runner = REFERENCE["runner"]
+    runner.parent.mkdir(parents=True, exist_ok=True)
     runner.write_text(
         "import sys, pathlib, json\n"
         "from alpha101_pipeline import run_alpha101_duckdb\n"
@@ -147,9 +152,6 @@ def run_reference(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
         "print(json.dumps({k: report[k] for k in ('engine', 'duckdb_version') if k in report}))\n",
         encoding="utf-8",
     )
-    python = REFERENCE["venv"] / "bin" / "python"
-    if not python.exists():
-        raise SystemExit(f"参照环境不存在：{python}\n先跑 `bash tools/fetch_second_reference.sh`")
     try:
         proc = subprocess.run(  # noqa: S603
             [str(python), str(runner), str(inp), str(outp), ",".join(names)],
